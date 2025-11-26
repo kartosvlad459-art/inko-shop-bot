@@ -32,7 +32,9 @@ except Exception as e:
 
 
 # ================== НАСТРОЙКИ ==================
-TOKEN = os.getenv("INKO_BOT_TOKEN", "7557908459:AAGdtEmMpbwTTroNzSuAqe9a9BeoJxWhfew")
+TOKEN = os.getenv("INKO_BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("❌ INKO_BOT_TOKEN не задан в переменных окружения")
 ADMIN_ID = 7867809053
 CHANNEL_USERNAME = "Inkoshop"
 CURRENCY = "₽"
