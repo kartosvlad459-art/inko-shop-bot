@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+
 import os
 import sqlite3
 import json
@@ -12,6 +13,7 @@ from telebot import types
 from telebot.types import InputMediaPhoto
 
 # ================== АВТО-СБРОС БАЗЫ ==================
+
 RESET_DB = False  # для продакшена False. если нужен чистый старт — поставь True
 
 BASE_DIR = os.path.dirname(__file__)
@@ -28,10 +30,11 @@ try:
             print("⚠️ journal файл удалён!")
 except Exception as e:
     print("Ошибка при автосбросе базы:", e)
+
 # ====================================================
 
-
 # ================== НАСТРОЙКИ ==================
+
 TOKEN = os.getenv("INKO_BOT_TOKEN", "7557908459:AAGdtEmMpbwTTroNzSuAqe9a9BeoJxWhfew")
 ADMIN_ID = 7867809053
 CHANNEL_USERNAME = "@Inkoshop"  # ✅ лучше с @
@@ -41,11 +44,13 @@ REFERRAL_BONUS = 0
 REFERRAL_CAP = 40
 
 PROMO_MAX_PERCENT = 25  # лимит скидки с промокода
+
 # ==============================================
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 
 # ================== БАЗА ДАННЫХ ==================
+
 DB_PATH = os.path.join(BASE_DIR, "store.db")
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 conn.row_factory = sqlite3.Row
@@ -251,6 +256,7 @@ def promo_limit_str(max_uses: Optional[int]) -> str:
 
 
 # ================== ПОЛЬЗОВАТЕЛИ / РЕФЕРАЛКА ==================
+
 def add_user(user_id: int, username: Optional[str], referrer_id: Optional[int] = None):
     exists = db_exec("SELECT user_id FROM users WHERE user_id=?", (user_id,), fetchone=True)
     if exists:
@@ -286,6 +292,7 @@ def get_ref_stats(user_id: int) -> Tuple[int, int]:
 
 
 # ================== КАТЕГОРИИ / ТОВАРЫ ==================
+
 def get_or_create_category(name: str) -> int:
     name = name.strip()
     slug = name.lower()
@@ -336,6 +343,7 @@ def get_product(product_id: int) -> Optional[sqlite3.Row]:
 
 
 # ================== КОРЗИНА / ЗАКАЗЫ ==================
+
 def add_to_cart(user_id: int, product_id: int, size: str, qty: int = 1):
     db_exec(
         """
@@ -390,6 +398,7 @@ def set_order_status(order_id: int, status: str):
 
 
 # ================== ИЗБРАННОЕ ==================
+
 def toggle_favorite(user_id: int, product_id: int) -> bool:
     row = db_exec(
         "SELECT id FROM favorites WHERE user_id=? AND product_id=?",
@@ -415,6 +424,7 @@ def get_favorites(user_id: int) -> List[sqlite3.Row]:
 
 
 # ================== ПРОМОКОДЫ ==================
+
 def get_promo(code: str) -> Optional[sqlite3.Row]:
     code = code.strip().upper()
     if not code:
@@ -454,12 +464,12 @@ def promo_confirm_use(code: str):
 
 def set_user_promo(user_id: int, code: str, percent: int):
     db_exec("""
-        INSERT INTO user_promos(user_id, code, discount_percent, set_at)
-        VALUES(?,?,?,?)
-        ON CONFLICT(user_id) DO UPDATE SET
-            code=excluded.code,
-            discount_percent=excluded.discount_percent,
-            set_at=excluded.set_at
+    INSERT INTO user_promos(user_id, code, discount_percent, set_at)
+    VALUES(?,?,?,?)
+    ON CONFLICT(user_id) DO UPDATE SET
+        code=excluded.code,
+        discount_percent=excluded.discount_percent,
+        set_at=excluded.set_at
     """, (user_id, code, percent, datetime.utcnow().isoformat()))
 
 
@@ -491,6 +501,7 @@ def create_review_bonus_promo(user_id: int, review_id: int) -> str:
 
 
 # ================== ПАРТНЁРЫ ==================
+
 def get_partner_by_code(code: str) -> Optional[sqlite3.Row]:
     if not code:
         return None
@@ -550,39 +561,47 @@ def approve_partner_request(user_id: int):
 
 def reject_partner_request(user_id: int):
     db_exec("""
-        INSERT INTO partner_requests(user_id,username,status,requested_at,decided_at)
-        VALUES(?,?,?,?,?)
-        ON CONFLICT(user_id) DO UPDATE SET
-            status='rejected',
-            decided_at=excluded.decided_at
+    INSERT INTO partner_requests(user_id,username,status,requested_at,decided_at)
+    VALUES(?,?,?,?,?)
+    ON CONFLICT(user_id) DO UPDATE SET
+        status='rejected',
+        decided_at=excluded.decided_at
     """, (user_id, None, "rejected", datetime.utcnow().isoformat(), datetime.utcnow().isoformat()))
 
 
 # ================== ОТЗЫВЫ ==================
+
 def get_pending_reviews() -> List[sqlite3.Row]:
     return db_exec("SELECT * FROM reviews WHERE is_approved=0 ORDER BY id ASC", fetchall=True)
+
 
 def get_approved_reviews_all() -> List[sqlite3.Row]:
     return db_exec("SELECT * FROM reviews WHERE is_approved=1 ORDER BY id DESC", fetchall=True)
 
+
 def approve_review(review_id: int):
     db_exec("UPDATE reviews SET is_approved=1 WHERE id=?", (review_id,))
+
 
 def reject_review(review_id: int):
     db_exec("DELETE FROM reviews WHERE id=?", (review_id,))
 
 
 # ================== БАННЕРЫ / ЛОГО ==================
+
 def get_banner(section: str) -> Optional[str]:
     return get_setting(f"banner_{section}")
+
 
 def set_banner(section: str, file_id: str):
     set_setting(f"banner_{section}", file_id)
 
 
 # ================== UI / КНОПКИ ==================
+
 def back_btn(data="sec:menu"):
     return types.InlineKeyboardButton("⬅️ Назад", callback_data=data)
+
 
 def main_menu(user_id: int):
     kb = types.InlineKeyboardMarkup()
@@ -708,9 +727,11 @@ def admin_panel_kb():
 
 
 # ================== ОБЯЗАТЕЛЬНАЯ ПОДПИСКА НА КАНАЛ ==================
+
 def _channel_ref() -> str:
     ch = CHANNEL_USERNAME.strip()
     return ch if ch.startswith("@") else f"@{ch}"
+
 
 def is_subscribed(user_id: int) -> bool:
     try:
@@ -720,11 +741,13 @@ def is_subscribed(user_id: int) -> bool:
         print("Sub check error:", e)
         return False
 
+
 def subscribe_kb():
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("✅ Подписаться", url=f"https://t.me/{_channel_ref()[1:]}"))
     kb.add(types.InlineKeyboardButton("🔄 Проверить подписку", callback_data="sub:check"))
     return kb
+
 
 def send_subscribe_gate(chat_id: int):
     text = (
@@ -733,11 +756,12 @@ def send_subscribe_gate(chat_id: int):
         "После подписки нажми «Проверить подписку»."
     )
     bot.send_message(chat_id, text, reply_markup=subscribe_kb())
-# ===================================================================
 
 
-# ====== Отзывы (листать по одному) ======
+# ================== Отзывы (листать по одному) ==================
+
 USER_REVIEW_INDEX: Dict[int, int] = {}
+
 
 def reviews_nav_kb(idx: int, total: int):
     kb = types.InlineKeyboardMarkup(row_width=2)
@@ -754,8 +778,11 @@ def reviews_nav_kb(idx: int, total: int):
 def show_review(chat_id: int, user_id: int, idx: int):
     rows = get_approved_reviews_all()
     if not rows:
-        bot.send_message(chat_id, "Пока нет отзывов 😔",
-                         reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu")))
+        bot.send_message(
+            chat_id,
+            "Пока нет отзывов 😔",
+            reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu"))
+        )
         return
 
     idx = max(0, min(idx, len(rows) - 1))
@@ -779,6 +806,7 @@ def show_review(chat_id: int, user_id: int, idx: int):
 
 
 # ================== АВТОПОДМЕНА СООБЩЕНИЙ ==================
+
 def smart_send(chat_id: int, text: str, kb=None, origin_msg: types.Message = None, photo_id: str = None):
     try:
         if origin_msg and origin_msg.message_id:
@@ -799,6 +827,7 @@ def smart_send(chat_id: int, text: str, kb=None, origin_msg: types.Message = Non
 
 
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
+
 def send_section_banner(chat_id: int, section: str, text: str, kb=None, origin_msg: types.Message = None):
     banner_id = get_banner(section)
     if banner_id:
@@ -829,6 +858,7 @@ def parse_post_to_product(caption: str) -> Tuple[str, str, str, int, bool]:
 
 
 # ================== /START, /MENU, /WHOAMI ==================
+
 @bot.message_handler(commands=["start"])
 def cmd_start(message: types.Message):
     referrer_id = None
@@ -854,8 +884,12 @@ def cmd_start(message: types.Message):
     logo_id = get_setting("logo_file_id")
     if logo_id:
         try:
-            bot.send_photo(message.chat.id, logo_id, caption=caption,
-                           reply_markup=main_menu(message.from_user.id))
+            bot.send_photo(
+                message.chat.id,
+                logo_id,
+                caption=caption,
+                reply_markup=main_menu(message.from_user.id)
+            )
             return
         except Exception as e:
             print("Logo send error:", e)
@@ -897,6 +931,7 @@ def _save_logo(message: types.Message):
 
 
 # ================== АДМИН ИМПОРТ (ФОТО/АЛЬБОМ) ==================
+
 @bot.message_handler(commands=["import"])
 def cmd_import_hint(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -946,7 +981,10 @@ def _finalize_admin_import(chat_id: int, caption: str, photos: List[str]):
         )
 
 
-@bot.message_handler(func=lambda m: m.from_user and m.from_user.id == ADMIN_ID, content_types=["photo"])
+@bot.message_handler(
+    func=lambda m: m.from_user and m.from_user.id == ADMIN_ID,
+    content_types=["photo"]
+)
 def admin_import_product(message: types.Message):
     caption = message.caption or ""
 
@@ -965,24 +1003,45 @@ def admin_import_product(message: types.Message):
 
 
 # ================== РАЗДЕЛЫ ==================
+
 def open_catalog(chat_id: int):
     cats = get_categories()
     if not cats:
-        send_section_banner(chat_id, "catalog", "Каталог пуст.",
-                            types.InlineKeyboardMarkup().add(back_btn("sec:menu")))
+        send_section_banner(
+            chat_id, "catalog", "Каталог пуст.",
+            types.InlineKeyboardMarkup().add(back_btn("sec:menu"))
+        )
         return
     send_section_banner(chat_id, "catalog", "<b>Категории:</b>", category_kb(cats))
 
 
-USER_CAT_INDEX = {}
+USER_CAT_INDEX: Dict[Tuple[int, int], int] = {}
 USER_PRODUCT_CTRL_MSG: Dict[Tuple[int, int], int] = {}
+
+# ✅ НОВОЕ: храним медиа-сообщения для пары (user_id, cat_id)
+USER_PRODUCT_MEDIA_MSGS: Dict[Tuple[int, int], List[int]] = {}
+
+
+def _delete_old_media(chat_id: int, key: Tuple[int, int]):
+    """Удаляет старые сообщения с медиа по ключу (user_id, cat_id)."""
+    old_ids = USER_PRODUCT_MEDIA_MSGS.get(key, [])
+    if not old_ids:
+        return
+    for mid in old_ids:
+        try:
+            bot.delete_message(chat_id, mid)
+        except:
+            pass
+    USER_PRODUCT_MEDIA_MSGS[key] = []
 
 
 def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
     prods = get_products_by_category(cat_id)
     if not prods:
-        bot.send_message(chat_id, "В этой категории пока нет товаров.",
-                         reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:catalog")))
+        bot.send_message(
+            chat_id, "В этой категории пока нет товаров.",
+            reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:catalog"))
+        )
         return
 
     idx = max(0, min(idx, len(prods) - 1))
@@ -1001,19 +1060,31 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
     key = (user_id, cat_id)
     ctrl_mid = USER_PRODUCT_CTRL_MSG.get(key)
 
-    if not ctrl_mid:
-        if len(photos) >= 2:
-            media = [InputMediaPhoto(pid) for pid in photos[:10]]
-            media[-1].caption = text
-            media[-1].parse_mode = "HTML"
-            bot.send_media_group(chat_id, media)
-            ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
-        elif photos:
-            bot.send_photo(chat_id, photos[-1], caption=text)
-            ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
-        else:
-            ctrl = bot.send_message(chat_id, text, reply_markup=kb)
+    # ✅ ВАЖНО: при любом показе листанием удаляем прошлые медиа
+    if ctrl_mid:
+        _delete_old_media(chat_id, key)
 
+    sent_media_ids: List[int] = []
+
+    # отправляем новые медиа
+    if len(photos) >= 2:
+        media = [InputMediaPhoto(pid) for pid in photos[:10]]
+        media[-1].caption = text
+        media[-1].parse_mode = "HTML"
+        msgs = bot.send_media_group(chat_id, media)
+        sent_media_ids = [m.message_id for m in msgs]
+    elif photos:
+        m = bot.send_photo(chat_id, photos[-1], caption=text, parse_mode="HTML")
+        sent_media_ids = [m.message_id]
+    else:
+        m = bot.send_message(chat_id, text, parse_mode="HTML")
+        sent_media_ids = [m.message_id]
+
+    USER_PRODUCT_MEDIA_MSGS[key] = sent_media_ids
+
+    # контрольное сообщение
+    if not ctrl_mid:
+        ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
         USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
         return
 
@@ -1024,12 +1095,12 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
             message_id=ctrl_mid,
             reply_markup=kb
         )
-        if not photos:
-            bot.edit_message_text(text, chat_id, ctrl_mid, reply_markup=kb, parse_mode="HTML")
     except Exception as e:
         print("ctrl msg edit fail:", e)
         USER_PRODUCT_CTRL_MSG.pop(key, None)
-        show_product(chat_id, user_id, cat_id, idx)
+        # пересоздадим контролку
+        ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
+        USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
 
 
 def open_cart(chat_id: int, user_id: int, origin_msg: types.Message = None):
@@ -1067,12 +1138,15 @@ def open_favs(chat_id: int, user_id: int, origin_msg: types.Message = None):
     if not favs:
         send_section_banner(chat_id, "favs", "Избранное пустое ⭐️", favs_kb(), origin_msg=origin_msg)
         return
-    text = "<b>Избранное:</b>\n\n" + "\n".join([f"• {f['title']} — {f['price']}{CURRENCY}" for f in favs])
+    text = "<b>Избранное:</b>\n\n" + "\n".join(
+        [f"• {f['title']} — {f['price']}{CURRENCY}" for f in favs]
+    )
     send_section_banner(chat_id, "favs", text, favs_kb(), origin_msg=origin_msg)
 
 
 def open_profile(chat_id: int, user_id: int, origin_msg: types.Message = None):
-    send_section_banner(chat_id, "profile", "<b>Профиль</b>\nВыбери раздел:", profile_kb(user_id), origin_msg=origin_msg)
+    send_section_banner(chat_id, "profile", "<b>Профиль</b>\nВыбери раздел:", profile_kb(user_id),
+                        origin_msg=origin_msg)
 
 
 def open_reviews(chat_id: int, user_id: int):
@@ -1104,6 +1178,7 @@ def open_promo_section(chat_id: int, user_id: int, origin_msg: types.Message = N
             "Скидка сохранится и применится при следующей покупке."
         )
     send_section_banner(chat_id, "promo", text, promo_section_kb(user_id), origin_msg=origin_msg)
+
     if user_id != ADMIN_ID:
         msg = bot.send_message(chat_id, "Введи промокод:")
         bot.register_next_step_handler(msg, lambda m: handle_user_promo_input(m, user_id))
@@ -1115,13 +1190,15 @@ def open_help(chat_id: int, origin_msg: types.Message = None):
         "1) Открой Каталог → выбери категорию.\n"
         "2) Листай товары стрелками.\n"
         "3) Нажми «Выбрать размер / в корзину».\n"
-        "4) В Корзине нажми «Оформить” заказ».\n"
+        "4) В Корзине нажми «Оформить заказ».\n"
         "5) Дальше админ свяжется с тобой.\n"
         "Промокод можно ввести заранее в меню «Промокод».\n"
     )
-    send_section_banner(chat_id, "help", text,
-                        types.InlineKeyboardMarkup().add(back_btn("sec:menu")),
-                        origin_msg=origin_msg)
+    send_section_banner(
+        chat_id, "help", text,
+        types.InlineKeyboardMarkup().add(back_btn("sec:menu")),
+        origin_msg=origin_msg
+    )
 
 
 def open_admin_panel(chat_id: int, user_id: int, origin_msg: types.Message = None):
@@ -1132,12 +1209,12 @@ def open_admin_panel(chat_id: int, user_id: int, origin_msg: types.Message = Non
 
 
 # ================== CALLBACKS ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "noop")
 def cb_noop(c: types.CallbackQuery):
     bot.answer_callback_query(c.id)
 
 
-# ✅ кнопка “Проверить подписку”
 @bot.callback_query_handler(func=lambda c: c.data == "sub:check")
 def cb_sub_check(c: types.CallbackQuery):
     uid = c.from_user.id
@@ -1246,7 +1323,8 @@ def cb_review_nav(c: types.CallbackQuery):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cqty:"))
 def cb_cart_qty(c: types.CallbackQuery):
     _, item_id, delta = c.data.split(":")
-    item_id = int(item_id); delta = int(delta)
+    item_id = int(item_id)
+    delta = int(delta)
     bot.answer_callback_query(c.id)
     update_cart_item_qty(item_id, delta)
     open_cart(c.message.chat.id, c.from_user.id, origin_msg=c.message)
@@ -1265,8 +1343,10 @@ def search_products(message: types.Message):
     if not text:
         bot.reply_to(message, "Пустой запрос.")
         return
-    rows = db_exec("SELECT * FROM products WHERE title LIKE ? ORDER BY id DESC",
-                   (f"%{text}%",), fetchall=True)
+    rows = db_exec(
+        "SELECT * FROM products WHERE title LIKE ? ORDER BY id DESC",
+        (f"%{text}%",), fetchall=True
+    )
     if not rows:
         bot.reply_to(message, "Ничего не найдено.")
         return
@@ -1315,6 +1395,7 @@ def cb_fav(c: types.CallbackQuery):
 
 
 # ====== ЧЕКАУТ БЕЗ запроса промокода ======
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("cart:"))
 def cb_cart(c: types.CallbackQuery):
     act = c.data.split(":", 1)[1]
@@ -1382,8 +1463,10 @@ def _process_checkout_by_code(chat_id: int, user_id: int):
         user_text += f"К оплате: <b>{final_total}{CURRENCY}</b>\n"
 
     user_text += "\nАдмин свяжется с тобой."
-    bot.send_message(chat_id, user_text,
-                     reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu")))
+    bot.send_message(
+        chat_id, user_text,
+        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu"))
+    )
 
     order_lines = [
         f"{i['title']} — {i['qty']} шт., {i['size']}, {i['price']}{CURRENCY}"
@@ -1403,11 +1486,14 @@ def _process_checkout_by_code(chat_id: int, user_id: int):
     else:
         adm_text += f"Итог: <b>{final_total}{CURRENCY}</b>\n"
 
-    bot.send_message(ADMIN_ID, adm_text,
-                     reply_markup=admin_order_actions_kb(order_id, user_id))
+    bot.send_message(
+        ADMIN_ID, adm_text,
+        reply_markup=admin_order_actions_kb(order_id, user_id)
+    )
 
 
 # ================== АДМИН: ПОДТВЕРДИТЬ/ОТКЛОНИТЬ ==================
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("aocf:"))
 def cb_admin_confirm(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1524,6 +1610,7 @@ def cb_order_status(c: types.CallbackQuery):
 
 
 # ================== ПАРТНЁР: ОДОБРЕНИЕ/ОТКЛОНЕНИЕ ==================
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("prapp:"))
 def cb_partner_req_approve(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1555,7 +1642,7 @@ def cb_partner_req_reject(c: types.CallbackQuery):
     uid = int(c.data.split(":", 1)[1])
     reject_partner_request(uid)
     bot.answer_callback_query(c.id, "Отклонено")
-    bot.send_message(c.message.chat.id, "❌ Заявка партнёра отклонена.")
+    bot.send_message(c.message.chat.id, "❌ Заявка партнёра отклонена админом.")
     try:
         bot.send_message(uid, "❌ Заявка на партнёрство отклонена админом.")
     except:
@@ -1563,6 +1650,7 @@ def cb_partner_req_reject(c: types.CallbackQuery):
 
 
 # ================== ПРОФИЛЬ (вкладки) ==================
+
 @bot.callback_query_handler(func=lambda c: c.data.startswith("prof:"))
 def cb_profile_tabs(c: types.CallbackQuery):
     tab = c.data.split(":", 1)[1]
@@ -1615,9 +1703,12 @@ def cb_profile_tabs(c: types.CallbackQuery):
                 f"  Подтверждено покупок: <b>{conf}</b>\n"
                 f"  Осталось: <b>{left}</b>\n\n"
             )
-        smart_send(c.message.chat.id, text,
-                   types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                   origin_msg=c.message)
+
+        smart_send(
+            c.message.chat.id, text,
+            types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
+            origin_msg=c.message
+        )
 
     elif tab == "refs":
         count, cap = get_ref_stats(uid)
@@ -1627,9 +1718,11 @@ def cb_profile_tabs(c: types.CallbackQuery):
             f"Твоя ссылка:\n<code>{link}</code>\n\n"
             f"Приглашено: <b>{count}/{cap}</b>"
         )
-        smart_send(c.message.chat.id, text,
-                   types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                   origin_msg=c.message)
+        smart_send(
+            c.message.chat.id, text,
+            types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
+            origin_msg=c.message
+        )
 
     elif tab == "partner":
         p = get_partner(uid)
@@ -1647,16 +1740,20 @@ def cb_profile_tabs(c: types.CallbackQuery):
                 f"Баланс: <b>{p['balance']}{CURRENCY}</b>\n\n"
                 "Чтобы вывести баланс — напиши админу."
             )
-            smart_send(c.message.chat.id, text,
-                       types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                       origin_msg=c.message)
+            smart_send(
+                c.message.chat.id, text,
+                types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
+                origin_msg=c.message
+            )
             return
 
         if req and req["status"] == "pending":
-            smart_send(c.message.chat.id,
-                       "⏳ Твоя заявка на партнёрство уже на рассмотрении.",
-                       types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                       origin_msg=c.message)
+            smart_send(
+                c.message.chat.id,
+                "⏳ Твоя заявка на партнёрство уже на рассмотрении.",
+                types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
+                origin_msg=c.message
+            )
             return
 
         db_exec("""
@@ -1696,9 +1793,11 @@ def cb_order_view(c: types.CallbackQuery):
 
     o = get_order(order_id)
     if not o:
-        smart_send(c.message.chat.id, "Заказ не найден.",
-                   types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                   origin_msg=c.message)
+        smart_send(
+            c.message.chat.id, "Заказ не найден.",
+            types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
+            origin_msg=c.message
+        )
         return
 
     items = db_exec("""
@@ -1708,10 +1807,7 @@ def cb_order_view(c: types.CallbackQuery):
         WHERE oi.order_id=?
     """, (order_id,), fetchall=True)
 
-    lines = []
-    for it in items:
-        lines.append(f"• {it['title']} — {it['qty']} шт., {it['size']}")
-
+    lines = [f"• {it['title']} — {it['qty']} шт., {it['size']}" for it in items]
     base = o["total"]
     final = o["final_total"] or base
     promo = o["promo_code"] or "нет"
@@ -1724,12 +1820,15 @@ def cb_order_view(c: types.CallbackQuery):
         "<b>Позиции:</b>\n" + "\n".join(lines)
     )
 
-    smart_send(c.message.chat.id, text,
-               types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-               origin_msg=c.message)
+    smart_send(
+        c.message.chat.id, text,
+        types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
+        origin_msg=c.message
+    )
 
 
 # ================== АДМИН: IMPORT HINT КНОПКА ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:import_hint")
 def cb_adm_import_hint(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1746,12 +1845,15 @@ def cb_adm_import_hint(c: types.CallbackQuery):
         "Если переслал альбом — после него отправь любое сообщение, "
         "чтобы бот завершил импорт."
     )
-    smart_send(c.message.chat.id, txt,
-               types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
-               origin_msg=c.message)
+    smart_send(
+        c.message.chat.id, txt,
+        types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
+        origin_msg=c.message
+    )
 
 
 # ================== АДМИН: БАННЕРЫ ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:banners")
 def cb_adm_banners(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1772,8 +1874,7 @@ def cb_adm_banners(c: types.CallbackQuery):
     ]:
         kb.add(types.InlineKeyboardButton(name, callback_data=f"setb:{sec}"))
     kb.add(back_btn("sec:admin"))
-    smart_send(c.message.chat.id, "Выбери раздел для баннера:",
-               kb, origin_msg=c.message)
+    smart_send(c.message.chat.id, "Выбери раздел для баннера:", kb, origin_msg=c.message)
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("setb:"))
@@ -1799,6 +1900,7 @@ def save_banner_photo(message: types.Message, section: str):
 
 
 # ================== АДМИН: ЗАКАЗЫ ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:orders")
 def cb_adm_orders(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1807,9 +1909,11 @@ def cb_adm_orders(c: types.CallbackQuery):
     bot.answer_callback_query(c.id)
     rows = db_exec("SELECT * FROM orders ORDER BY id DESC LIMIT 20", fetchall=True)
     if not rows:
-        smart_send(c.message.chat.id, "Заказов пока нет.",
-                   types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
-                   origin_msg=c.message)
+        smart_send(
+            c.message.chat.id, "Заказов пока нет.",
+            types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
+            origin_msg=c.message
+        )
         return
     for o in rows:
         base = o["total"]
@@ -1826,6 +1930,7 @@ def cb_adm_orders(c: types.CallbackQuery):
 
 
 # ================== АДМИН: ПРОМОКОДЫ ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:promos")
 def cb_adm_promos(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1863,7 +1968,8 @@ def admin_create_promo(message: types.Message):
         return
     code = parts[0].upper()
     try:
-        percent = int(parts[1]); max_uses = int(parts[2])
+        percent = int(parts[1])
+        max_uses = int(parts[2])
     except:
         bot.reply_to(message, "Скидка и лимит должны быть числами.")
         return
@@ -1887,9 +1993,11 @@ def cb_adm_promo_list(c: types.CallbackQuery):
     bot.answer_callback_query(c.id)
     rows = db_exec("SELECT * FROM promo_codes ORDER BY created_at DESC", fetchall=True)
     if not rows:
-        smart_send(c.message.chat.id, "Промокодов нет.",
-                   types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
-                   origin_msg=c.message)
+        smart_send(
+            c.message.chat.id, "Промокодов нет.",
+            types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
+            origin_msg=c.message
+        )
         return
     text = "<b>Промокоды:</b>\n\n"
     for r in rows:
@@ -1905,12 +2013,16 @@ def cb_adm_promo_list(c: types.CallbackQuery):
             f"  Подтверждённых: {conf}\n"
             f"  Осталось: {left}\n\n"
         )
-    smart_send(c.message.chat.id, text,
-               types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
-               origin_msg=c.message)
+
+    smart_send(
+        c.message.chat.id, text,
+        types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
+        origin_msg=c.message
+    )
 
 
 # ================== АДМИН: РАССЫЛКА ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:broadcast")
 def cb_adm_broadcast(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1960,6 +2072,7 @@ def admin_do_broadcast(message: types.Message):
 
 
 # ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (ПО @USERNAME) ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:review_invite")
 def cb_adm_review_invite(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1983,10 +2096,7 @@ def admin_send_review_invite(message: types.Message):
         bot.reply_to(message, "Пусто. Введи @username.")
         return
 
-    if raw.startswith("@"):
-        username = raw[1:]
-    else:
-        username = raw
+    username = raw[1:] if raw.startswith("@") else raw
 
     if username.isdigit():
         uid = int(username)
@@ -2022,6 +2132,7 @@ def admin_send_review_invite(message: types.Message):
 
 
 # ================== АДМИН: НЕПРИНЯТЫЕ ОТЗЫВЫ ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:reviews_pending")
 def cb_adm_reviews_pending(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -2066,8 +2177,11 @@ def cb_review_approve(c: types.CallbackQuery):
     rid = int(c.data.split(":", 1)[1])
     approve_review(rid)
     bot.answer_callback_query(c.id, "✅ Принято")
-    bot.send_message(c.message.chat.id, f"Отзыв #{rid} принят ✅",
-                     reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:admin")))
+    bot.send_message(
+        c.message.chat.id,
+        f"Отзыв #{rid} принят ✅",
+        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:admin"))
+    )
 
     r = db_exec("SELECT * FROM reviews WHERE id=?", (rid,), fetchone=True)
     if r:
@@ -2097,8 +2211,11 @@ def cb_review_reject(c: types.CallbackQuery):
     r = db_exec("SELECT * FROM reviews WHERE id=?", (rid,), fetchone=True)
     reject_review(rid)
     bot.answer_callback_query(c.id, "❌ Отклонено")
-    bot.send_message(c.message.chat.id, f"Отзыв #{rid} отклонён ❌",
-                     reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:admin")))
+    bot.send_message(
+        c.message.chat.id,
+        f"Отзыв #{rid} отклонён ❌",
+        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:admin"))
+    )
     if r:
         try:
             bot.send_message(r["user_id"], "❌ Твой отзыв отклонён админом.")
@@ -2107,7 +2224,9 @@ def cb_review_reject(c: types.CallbackQuery):
 
 
 # ================== ПРИЁМ ОТЗЫВОВ (ТОЛЬКО ПО ИНВАЙТУ) ==================
+
 MG_CACHE: Dict[str, Dict] = {}
+
 
 @bot.message_handler(content_types=["photo"], func=lambda m: m.from_user and m.from_user.id != ADMIN_ID)
 def user_review_photo_or_album(message: types.Message):
@@ -2149,8 +2268,11 @@ def _save_user_review(user_id: int, text: str, photos: List[str], chat_id: int):
     )
     db_exec("UPDATE review_invites SET used=1 WHERE user_id=?", (user_id,))
 
-    bot.send_message(chat_id, "✅ Спасибо! Отзыв отправлен админу на модерацию.",
-                     reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu")))
+    bot.send_message(
+        chat_id,
+        "✅ Спасибо! Отзыв отправлен админу на модерацию.",
+        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu"))
+    )
 
     rid = db_exec("SELECT id FROM reviews ORDER BY id DESC LIMIT 1", fetchone=True)["id"]
     adm_caption = (
@@ -2169,8 +2291,10 @@ def _save_user_review(user_id: int, text: str, photos: List[str], chat_id: int):
 
 
 # ================== FLUSH АЛЬБОМОВ (ПОЧИНЕННЫЙ) ==================
+
 @bot.message_handler(content_types=["text", "photo", "video", "document", "audio", "voice", "sticker"])
 def media_group_flush(message: types.Message):
+    # flush admin import albums
     if message.from_user and message.from_user.id == ADMIN_ID:
         if ADMIN_ID in ADMIN_WAITING_FLUSH and not message.media_group_id and message.content_type == "text":
             mg_id = ADMIN_WAITING_FLUSH.pop(ADMIN_ID, None)
@@ -2202,6 +2326,7 @@ def media_group_flush(message: types.Message):
 
 
 # ================== АДМИН: СТАТИСТИКА ==================
+
 @bot.callback_query_handler(func=lambda c: c.data == "adm:stats")
 def cb_adm_stats(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -2245,9 +2370,10 @@ def cb_adm_stats(c: types.CallbackQuery):
 
 
 # ================== ФОЛЛБЭК ==================
+
 @bot.message_handler(content_types=["text"])
 def fallback(message: types.Message):
-    if message.text.startswith("/"):
+    if (message.text or "").startswith("/"):
         return
     if message.from_user and message.from_user.username:
         update_username(message.from_user.id, message.from_user.username)
@@ -2255,6 +2381,7 @@ def fallback(message: types.Message):
 
 
 # ================== RUN ==================
+
 if __name__ == "__main__":
     init_db()
     ensure_columns()
