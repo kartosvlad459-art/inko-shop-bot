@@ -32,11 +32,9 @@ except Exception as e:
 
 
 # ================== НАСТРОЙКИ ==================
-TOKEN = os.getenv("INKO_BOT_TOKEN")
-if not TOKEN:
-    raise RuntimeError("❌ INKO_BOT_TOKEN не задан в переменных окружения")
+TOKEN = os.getenv("INKO_BOT_TOKEN", "7557908459:AAGdtEmMpbwTTroNzSuAqe9a9BeoJxWhfew")
 ADMIN_ID = 7867809053
-CHANNEL_USERNAME = "Inkoshop"
+CHANNEL_USERNAME = "@Inkoshop"  # ✅ лучше с @
 CURRENCY = "₽"
 
 REFERRAL_BONUS = 0
@@ -709,6 +707,35 @@ def admin_panel_kb():
     return kb
 
 
+# ================== ОБЯЗАТЕЛЬНАЯ ПОДПИСКА НА КАНАЛ ==================
+def _channel_ref() -> str:
+    ch = CHANNEL_USERNAME.strip()
+    return ch if ch.startswith("@") else f"@{ch}"
+
+def is_subscribed(user_id: int) -> bool:
+    try:
+        member = bot.get_chat_member(_channel_ref(), user_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception as e:
+        print("Sub check error:", e)
+        return False
+
+def subscribe_kb():
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("✅ Подписаться", url=f"https://t.me/{_channel_ref()[1:]}"))
+    kb.add(types.InlineKeyboardButton("🔄 Проверить подписку", callback_data="sub:check"))
+    return kb
+
+def send_subscribe_gate(chat_id: int):
+    text = (
+        "⚠️ <b>Подпишись на наш канал, чтобы пользоваться ботом</b>\n\n"
+        f"Канал: {_channel_ref()}\n\n"
+        "После подписки нажми «Проверить подписку»."
+    )
+    bot.send_message(chat_id, text, reply_markup=subscribe_kb())
+# ===================================================================
+
+
 # ====== Отзывы (листать по одному) ======
 USER_REVIEW_INDEX: Dict[int, int] = {}
 
@@ -813,6 +840,11 @@ def cmd_start(message: types.Message):
         pass
 
     add_user(message.from_user.id, message.from_user.username, referrer_id)
+
+    # ✅ ОБЯЗАТЕЛЬНАЯ САБКА СРАЗУ ПОСЛЕ /start
+    if not is_subscribed(message.from_user.id):
+        send_subscribe_gate(message.chat.id)
+        return
 
     caption = (
         "<b>Привет! Ты в официальном боте магазина Inko Shop 👋</b>\n"
@@ -943,7 +975,6 @@ def open_catalog(chat_id: int):
 
 
 USER_CAT_INDEX = {}
-# контрольное сообщение товара: (user_id, cat_id) -> message_id
 USER_PRODUCT_CTRL_MSG: Dict[Tuple[int, int], int] = {}
 
 
@@ -970,7 +1001,6 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
     key = (user_id, cat_id)
     ctrl_mid = USER_PRODUCT_CTRL_MSG.get(key)
 
-    # первый показ — шлём альбом/фото и контрольное сообщение с кнопками
     if not ctrl_mid:
         if len(photos) >= 2:
             media = [InputMediaPhoto(pid) for pid in photos[:10]]
@@ -987,7 +1017,6 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
         USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
         return
 
-    # листание — редактируем только контрольное сообщение
     try:
         bot.edit_message_text(
             text="Выбери действие:",
@@ -1106,6 +1135,24 @@ def open_admin_panel(chat_id: int, user_id: int, origin_msg: types.Message = Non
 @bot.callback_query_handler(func=lambda c: c.data == "noop")
 def cb_noop(c: types.CallbackQuery):
     bot.answer_callback_query(c.id)
+
+
+# ✅ кнопка “Проверить подписку”
+@bot.callback_query_handler(func=lambda c: c.data == "sub:check")
+def cb_sub_check(c: types.CallbackQuery):
+    uid = c.from_user.id
+    bot.answer_callback_query(c.id)
+
+    if not is_subscribed(uid):
+        bot.answer_callback_query(c.id, "Ты ещё не подписан 😔", show_alert=True)
+        return
+
+    try:
+        bot.delete_message(c.message.chat.id, c.message.message_id)
+    except:
+        pass
+
+    bot.send_message(c.message.chat.id, "✅ Спасибо за подписку! Вот меню:", reply_markup=main_menu(uid))
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sec:"))
@@ -2024,7 +2071,6 @@ def cb_review_approve(c: types.CallbackQuery):
 
     r = db_exec("SELECT * FROM reviews WHERE id=?", (rid,), fetchone=True)
     if r:
-        # бонус промо за отзыв
         try:
             bonus_code = create_review_bonus_promo(r["user_id"], rid)
             bot.send_message(
