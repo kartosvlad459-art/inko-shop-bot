@@ -2113,4 +2113,4 @@ if __name__ == "__main__":
     me = bot.get_me()
     print(f"✅ INKO SHOP Bot is running as @{me.username} (id {me.id})")
     bot.remove_webhook()
-    bot.infinity_polling(timeout=60, long_polling_timeout=60, skip_pending=True)
+    bot.infinity_polling(timeout=60, long_polling_timeout=60, skip_pending=True) 
