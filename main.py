@@ -629,9 +629,10 @@ def product_nav_kb(cat_id: int, idx: int, total: int, prod_id: int):
     return kb
 
 
-def size_kb(prod_id: int):
+def size_kb(prod_id: int, sizes: List[str]):
+    """Кнопки размеров — из поста после 'Размеры:'."""
     kb = types.InlineKeyboardMarkup(row_width=5)
-    for s in ["XS", "S", "M", "L", "XL"]:
+    for s in sizes:
         kb.add(types.InlineKeyboardButton(s, callback_data=f"size:{prod_id}:{s}"))
     kb.add(back_btn("sec:catalog"))
     return kb
@@ -828,6 +829,28 @@ def parse_post_to_product(caption: str) -> Tuple[str, str, str, int, bool]:
     return cat, title, description, price, is_pre
 
 
+def extract_sizes_from_text(text: str) -> List[str]:
+    """
+    Ищем строку 'Размеры:' или 'Размер:' и берём всё что после.
+    Примеры:
+      'Размеры: XS / S / M / L'
+      'Размеры: 42 43 44'
+      'Размер: one size'
+    """
+    if not text:
+        return ["XS", "S", "M", "L", "XL"]
+
+    m = re.search(r"(?:Размеры|Размер)\s*:\s*([^\n\r]+)", text, flags=re.IGNORECASE)
+    if not m:
+        return ["XS", "S", "M", "L", "XL"]
+
+    raw = m.group(1).strip()
+    # делим по /, , или пробелам
+    parts = re.split(r"[\/,]|(?:\s{1,})", raw)
+    sizes = [p.strip() for p in parts if p.strip()]
+    return sizes or ["XS", "S", "M", "L", "XL"]
+
+
 # ================== /START, /MENU, /WHOAMI ==================
 @bot.message_handler(commands=["start"])
 def cmd_start(message: types.Message):
@@ -977,7 +1000,7 @@ def open_catalog(chat_id: int):
 USER_CAT_INDEX: Dict[Tuple[int, int], int] = {}
 USER_PRODUCT_CTRL_MSG: Dict[Tuple[int, int], int] = {}
 
-# ✅ НОВОЕ: храним id медиа-сообщений по (user_id, cat_id)
+# ✅ храним id медиа-сообщений по (user_id, cat_id)
 USER_PRODUCT_MEDIA_MSGS: Dict[Tuple[int, int], List[int]] = {}
 
 
@@ -1005,10 +1028,13 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
 
     p = prods[idx]
     photos = json.loads(p["photos_json"]) if p["photos_json"] else []
+    sizes = extract_sizes_from_text(p["description"] or "")
+    sizes_line = " / ".join(sizes)
+
     text = (
         f"<b>{p['title']}</b>\n"
         f"Цена: <b>{p['price']}{CURRENCY}</b>\n"
-        f"Размеры: XS / S / M / L / XL\n"
+        f"Размеры: {sizes_line}\n"
         f"\n<i>{idx+1} из {len(prods)}</i>"
     )
     kb = product_nav_kb(cat_id, idx, len(prods), p["id"])
@@ -1037,7 +1063,7 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
 
     USER_PRODUCT_MEDIA_MSGS[key] = new_media_mids
 
-    # 2) Контрольное сообщение с кнопками (одно на категорию)
+    # 2) Контрольное сообщение с кнопками (одно на категорию) — всегда сверху
     ctrl_mid = USER_PRODUCT_CTRL_MSG.get(key)
     if not ctrl_mid:
         ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
@@ -1312,17 +1338,24 @@ def search_products(message: types.Message):
 def cb_product(c: types.CallbackQuery):
     prod_id = int(c.data.split(":", 1)[1])
     bot.answer_callback_query(c.id)
-    bot.send_message(c.message.chat.id, "Выбери размер:", reply_markup=size_kb(prod_id))
+    p = get_product(prod_id)
+    if not p:
+        bot.send_message(c.message.chat.id, "Товар не найден.")
+        return
+    sizes = extract_sizes_from_text(p["description"] or "")
+    bot.send_message(c.message.chat.id, "Выбери размер:", reply_markup=size_kb(prod_id, sizes))
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("size:"))
 def cb_choose_size(c: types.CallbackQuery):
     _, prod_id, size = c.data.split(":")
     prod_id = int(prod_id)
+
     p = get_product(prod_id)
     if not p:
         bot.answer_callback_query(c.id, "Товар не найден.")
         return
+
     add_to_cart(c.from_user.id, prod_id, size)
     bot.answer_callback_query(c.id, f"Добавлено ({size})")
     bot.send_message(
@@ -1546,212 +1579,6 @@ def cb_order_status(c: types.CallbackQuery):
             bot.send_message(o["user_id"], f"🔔 Статус заказа #{order_id}: <b>{status}</b>")
         except:
             pass
-
-
-# ================== ПАРТНЁР: ОДОБРЕНИЕ/ОТКЛОНИТЬ ==================
-@bot.callback_query_handler(func=lambda c: c.data.startswith("prapp:"))
-def cb_partner_req_approve(c: types.CallbackQuery):
-    if c.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(c.id, "Нет доступа.")
-        return
-    uid = int(c.data.split(":", 1)[1])
-    code, dp, cp = approve_partner_request(uid)
-    bot.answer_callback_query(c.id, "Одобрено")
-    bot.send_message(c.message.chat.id, f"✅ Партнёрство одобрено. Код: {code}")
-
-    try:
-        bot.send_message(
-            uid,
-            "🎉 Тебя одобрили как партнёра!\n\n"
-            f"Твой промокод: <code>{code}</code>\n"
-            f"Скидка клиенту: <b>{dp}%</b>\n"
-            f"Твоя комиссия: <b>{cp}%</b> от суммы после скидки.\n\n"
-            "Статистика будет в Профиле → Партнёрский промокод."
-        )
-    except:
-        pass
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("prrej:"))
-def cb_partner_req_reject(c: types.CallbackQuery):
-    if c.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(c.id, "Нет доступа.")
-        return
-    uid = int(c.data.split(":", 1)[1])
-    reject_partner_request(uid)
-    bot.answer_callback_query(c.id, "Отклонено")
-    bot.send_message(c.message.chat.id, "❌ Заявка партнёра отклонена.")
-    try:
-        bot.send_message(uid, "❌ Заявка на партнёрство отклонена админом.")
-    except:
-        pass
-
-
-# ================== ПРОФИЛЬ (вкладки) ==================
-@bot.callback_query_handler(func=lambda c: c.data.startswith("prof:"))
-def cb_profile_tabs(c: types.CallbackQuery):
-    tab = c.data.split(":", 1)[1]
-    uid = c.from_user.id
-    bot.answer_callback_query(c.id)
-
-    if tab == "orders":
-        orders = get_user_orders(uid)
-        if not orders:
-            smart_send(
-                c.message.chat.id,
-                "У тебя пока нет заказов.",
-                types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                origin_msg=c.message
-            )
-            return
-
-        text = "<b>Твои заказы:</b>\n\n"
-        kb = types.InlineKeyboardMarkup()
-        for o in orders:
-            base = o["total"]
-            final = o["final_total"] or base
-            text += f"• #{o['id']} — {base}{CURRENCY} → {final}{CURRENCY} | <b>{o['status']}</b>\n"
-            kb.add(types.InlineKeyboardButton(f"Подробнее #{o['id']}", callback_data=f"ordview:{o['id']}"))
-        kb.add(back_btn("sec:profile"))
-
-        smart_send(c.message.chat.id, text, kb, origin_msg=c.message)
-
-    elif tab == "promos":
-        rows = db_exec("SELECT * FROM promo_codes ORDER BY created_at DESC", fetchall=True)
-        if not rows:
-            smart_send(
-                c.message.chat.id,
-                "Промокодов пока нет.",
-                types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                origin_msg=c.message
-            )
-            return
-        text = "<b>Промокоды магазина:</b>\n\n"
-        for r in rows:
-            dp = min(int(r['discount_percent'] or 0), PROMO_MAX_PERCENT)
-            used = int(r["used"] or 0)
-            conf = int(r["confirmed_uses"] or 0)
-            mu_str = promo_limit_str(r["max_uses"])
-            left = "∞" if mu_str == "∞" else str(max(int(mu_str) - used, 0))
-
-            text += (
-                f"• <code>{r['code']}</code> — {dp}%\n"
-                f"  Использовано (резерв): <b>{used}/{mu_str}</b>\n"
-                f"  Подтверждено покупок: <b>{conf}</b>\n"
-                f"  Осталось: <b>{left}</b>\n\n"
-            )
-        smart_send(c.message.chat.id, text,
-                   types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                   origin_msg=c.message)
-
-    elif tab == "refs":
-        count, cap = get_ref_stats(uid)
-        link = f"https://t.me/{bot.get_me().username}?start={uid}"
-        text = (
-            "<b>Реферальная система</b>\n\n"
-            f"Твоя ссылка:\n<code>{link}</code>\n\n"
-            f"Приглашено: <b>{count}/{cap}</b>"
-        )
-        smart_send(c.message.chat.id, text,
-                   types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                   origin_msg=c.message)
-
-    elif tab == "partner":
-        p = get_partner(uid)
-        req = db_exec("SELECT * FROM partner_requests WHERE user_id=?", (uid,), fetchone=True)
-
-        if p and p["is_active"] == 1:
-            text = (
-                "<b>🤝 Ты партнёр магазина</b>\n\n"
-                f"Твой промокод: <code>{p['code']}</code>\n"
-                f"Скидка клиенту: <b>{p['discount_percent']}%</b>\n"
-                f"Твоя комиссия: <b>{p['commission_percent']}%</b> от суммы после скидки\n\n"
-                f"Подтверждённых покупок: <b>{p['confirmed_uses']}</b>\n"
-                f"Продаж на сумму: <b>{p['total_sales']}{CURRENCY}</b>\n"
-                f"Заработано всего: <b>{p['total_earned']}{CURRENCY}</b>\n"
-                f"Баланс: <b>{p['balance']}{CURRENCY}</b>\n\n"
-                "Чтобы вывести баланс — напиши админу."
-            )
-            smart_send(c.message.chat.id, text,
-                       types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                       origin_msg=c.message)
-            return
-
-        if req and req["status"] == "pending":
-            smart_send(c.message.chat.id,
-                       "⏳ Твоя заявка на партнёрство уже на рассмотрении.",
-                       types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                       origin_msg=c.message)
-            return
-
-        db_exec("""
-            INSERT INTO partner_requests(user_id,username,status,requested_at)
-            VALUES(?,?, 'pending', ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                status='pending',
-                requested_at=excluded.requested_at
-        """, (uid, c.from_user.username, datetime.utcnow().isoformat()))
-
-        smart_send(
-            c.message.chat.id,
-            "✅ Заявка на партнёрский промокод отправлена админу.\n"
-            "После одобрения ты получишь свой код и статистику в профиле.",
-            types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-            origin_msg=c.message
-        )
-
-        adm_kb = types.InlineKeyboardMarkup(row_width=2)
-        adm_kb.add(
-            types.InlineKeyboardButton("✅ Одобрить", callback_data=f"prapp:{uid}"),
-            types.InlineKeyboardButton("❌ Отклонить", callback_data=f"prrej:{uid}")
-        )
-        bot.send_message(
-            ADMIN_ID,
-            f"🤝 <b>Новая заявка на партнёрство</b>\n"
-            f"Пользователь: <a href='tg://user?id={uid}'>{uid}</a>\n"
-            f"@{c.from_user.username or '—'}",
-            reply_markup=adm_kb
-        )
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("ordview:"))
-def cb_order_view(c: types.CallbackQuery):
-    order_id = int(c.data.split(":")[1])
-    bot.answer_callback_query(c.id)
-
-    o = get_order(order_id)
-    if not o:
-        smart_send(c.message.chat.id, "Заказ не найден.",
-                   types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-                   origin_msg=c.message)
-        return
-
-    items = db_exec("""
-        SELECT oi.*, p.title
-        FROM order_items oi
-        LEFT JOIN products p ON p.id=oi.product_id
-        WHERE oi.order_id=?
-    """, (order_id,), fetchall=True)
-
-    lines = []
-    for it in items:
-        lines.append(f"• {it['title']} — {it['qty']} шт., {it['size']}")
-
-    base = o["total"]
-    final = o["final_total"] or base
-    promo = o["promo_code"] or "нет"
-
-    text = (
-        f"<b>Заказ #{order_id}</b>\n"
-        f"Статус: <b>{o['status']}</b>\n"
-        f"Промо: <code>{promo}</code>\n"
-        f"Сумма: {base}{CURRENCY} → <b>{final}{CURRENCY}</b>\n\n"
-        "<b>Позиции:</b>\n" + "\n".join(lines)
-    )
-
-    smart_send(c.message.chat.id, text,
-               types.InlineKeyboardMarkup().add(back_btn("sec:profile")),
-               origin_msg=c.message)
 
 
 # ================== АДМИН: IMPORT HINT КНОПКА ==================
