@@ -32,7 +32,7 @@ except Exception as e:
 
 
 # ================== НАСТРОЙКИ ==================
-TOKEN = os.getenv("INKO_BOT_TOKEN", "7557908459:AAGdtEmMpbwTTroNzSuAqe9a9BeoJxWhfew")
+TOKEN = os.getenv("INKO_BOT_TOKEN", "")
 ADMIN_ID = 7867809053
 CHANNEL_USERNAME = "@Inkoshop"  # ✅ лучше с @
 CURRENCY = "₽"
