@@ -1018,6 +1018,18 @@ def _delete_old_product_media(chat_id: int, key: Tuple[int, int]):
     USER_PRODUCT_MEDIA_MSGS[key] = []
 
 
+# ✅ НОВОЕ: удаляем старую "табличку" с кнопками, чтобы новая была снизу
+def _delete_old_product_ctrl(chat_id: int, key: Tuple[int, int]):
+    ctrl_mid = USER_PRODUCT_CTRL_MSG.get(key)
+    if not ctrl_mid:
+        return
+    try:
+        bot.delete_message(chat_id, ctrl_mid)
+    except:
+        pass
+    USER_PRODUCT_CTRL_MSG.pop(key, None)
+
+
 def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
     prods = get_products_by_category(cat_id)
     if not prods:
@@ -1043,8 +1055,9 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
 
     key = (user_id, cat_id)
 
-    # ✅ при любом показе после первого — удаляем старые медиа
+    # ✅ чистим прошлые медиа и прошлую "табличку" с кнопками
     _delete_old_product_media(chat_id, key)
+    _delete_old_product_ctrl(chat_id, key)
 
     new_media_mids: List[int] = []
 
@@ -1065,25 +1078,9 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
 
     USER_PRODUCT_MEDIA_MSGS[key] = new_media_mids
 
-    # 2) Контрольное сообщение с кнопками (одно на категорию) — всегда сверху
-    ctrl_mid = USER_PRODUCT_CTRL_MSG.get(key)
-    if not ctrl_mid:
-        ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
-        USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
-        return
-
-    try:
-        bot.edit_message_text(
-            text="Выбери действие:",
-            chat_id=chat_id,
-            message_id=ctrl_mid,
-            reply_markup=kb
-        )
-    except Exception as e:
-        print("ctrl msg edit fail:", e)
-        USER_PRODUCT_CTRL_MSG.pop(key, None)
-        ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
-        USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
+    # 2) СРАЗУ после товара шлём НОВОЕ сообщение с кнопками — оно будет снизу
+    ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
+    USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
 
 
 def open_cart(chat_id: int, user_id: int, origin_msg: types.Message = None):
@@ -2115,4 +2112,4 @@ if __name__ == "__main__":
     me = bot.get_me()
     print(f"✅ INKO SHOP Bot is running as @{me.username} (id {me.id})")
     bot.remove_webhook()
-    bot.infinity_polling(timeout=60, long_polling_timeout=60, skip_pending=True) 
+    bot.infinity_polling(timeout=60, long_polling_timeout=60, skip_pending=True)
