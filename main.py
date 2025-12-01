@@ -36,13 +36,13 @@ TOKEN = os.getenv("INKO_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("INKO_BOT_TOKEN is not set")
 ADMIN_ID = 7867809053
-CHANNEL_USERNAME = "@Inkoshop"  # ✅ лучше с @
+CHANNEL_USERNAME = "@Inkoshop"
 CURRENCY = "₽"
 
 REFERRAL_BONUS = 0
 REFERRAL_CAP = 40
 
-PROMO_MAX_PERCENT = 25  # лимит скидки с промокода
+PROMO_MAX_PERCENT = 25
 # ==============================================
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
@@ -158,7 +158,6 @@ def init_db():
     )
     """)
 
-    # сохранённый промокод пользователя
     db_exec("""
     CREATE TABLE IF NOT EXISTS user_promos (
         user_id INTEGER PRIMARY KEY,
@@ -187,7 +186,6 @@ def init_db():
     )
     """)
 
-    # ================== ПАРТНЁРЫ / АВТОРСКИЕ ПРОМО ==================
     db_exec("""
     CREATE TABLE IF NOT EXISTS partner_requests (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -337,28 +335,20 @@ def get_product(product_id: int) -> Optional[sqlite3.Row]:
     return db_exec("SELECT * FROM products WHERE id=?", (product_id,), fetchone=True)
 
 
-# ✅ ПОЛНОЕ УДАЛЕНИЕ КАТЕГОРИИ (С ОЧИСТКОЙ СОДЕРЖИМОГО)
-def delete_category_full(cat_id: int) -> Tuple[int, int]:
-    """
-    Полное удаление категории:
-    - удаляет все товары в категории
-    - чистит cart_items, favorites, order_items по этим товарам
-    - удаляет саму категорию
-    Возвращает: (сколько товаров удалено, cat_id)
-    """
-    prods = db_exec("SELECT id FROM products WHERE category_id=?", (cat_id,), fetchall=True)
-    prod_ids = [p["id"] for p in prods]
+def delete_category_full(cat_id: int):
+    """Полностью очищает категорию: удаляет товары в ней + чистит корзину и избранное по этим товарам."""
+    prod_ids = [r["id"] for r in db_exec(
+        "SELECT id FROM products WHERE category_id=?",
+        (cat_id,), fetchall=True
+    )]
 
     if prod_ids:
-        q_marks = ",".join(["?"] * len(prod_ids))
-
-        db_exec(f"DELETE FROM cart_items WHERE product_id IN ({q_marks})", tuple(prod_ids))
-        db_exec(f"DELETE FROM favorites WHERE product_id IN ({q_marks})", tuple(prod_ids))
-        db_exec(f"DELETE FROM order_items WHERE product_id IN ({q_marks})", tuple(prod_ids))
-        db_exec(f"DELETE FROM products WHERE id IN ({q_marks})", tuple(prod_ids))
+        qmarks = ",".join(["?"] * len(prod_ids))
+        db_exec(f"DELETE FROM cart_items WHERE product_id IN ({qmarks})", tuple(prod_ids))
+        db_exec(f"DELETE FROM favorites WHERE product_id IN ({qmarks})", tuple(prod_ids))
+        db_exec(f"DELETE FROM products WHERE id IN ({qmarks})", tuple(prod_ids))
 
     db_exec("DELETE FROM categories WHERE id=?", (cat_id,))
-    return len(prod_ids), cat_id
 
 
 # ================== КОРЗИНА / ЗАКАЗЫ ==================
@@ -634,19 +624,13 @@ def main_menu(user_id: int):
 
 
 def category_kb(cats):
-    kb = types.InlineKeyboardMarkup()
-    for c in cats:
-        kb.add(types.InlineKeyboardButton(f"• {c['name']}", callback_data=f"cat:{c['id']}"))
+    # ✅ СЕТКА В 2 КОЛОНКИ
+    kb = types.InlineKeyboardMarkup(row_width=2)
+    btns = [types.InlineKeyboardButton(f"• {c['name']}", callback_data=f"cat:{c['id']}")
+            for c in cats]
+    if btns:
+        kb.add(*btns)
     kb.add(back_btn("sec:menu"))
-    return kb
-
-
-# ✅ клавиатура выбора категории для удаления
-def category_delete_kb(cats):
-    kb = types.InlineKeyboardMarkup()
-    for c in cats:
-        kb.add(types.InlineKeyboardButton(f"🗑 {c['name']}", callback_data=f"catdel:{c['id']}"))
-    kb.add(back_btn("sec:admin"))
     return kb
 
 
@@ -665,7 +649,6 @@ def product_nav_kb(cat_id: int, idx: int, total: int, prod_id: int):
 
 
 def size_kb(prod_id: int, sizes: List[str]):
-    """Кнопки размеров — из поста после 'Размеры:'."""
     kb = types.InlineKeyboardMarkup(row_width=5)
     for s in sizes:
         kb.add(types.InlineKeyboardButton(s, callback_data=f"size:{prod_id}:{s}"))
@@ -732,18 +715,29 @@ def review_pending_kb(review_id: int):
 def admin_panel_kb():
     kb = types.InlineKeyboardMarkup()
     kb.add(types.InlineKeyboardButton("📥 Импорт товара", callback_data="adm:import_hint"))
+    kb.add(types.InlineKeyboardButton("🗂 Категории", callback_data="adm:categories"))  # ✅ управление категориями
     kb.add(types.InlineKeyboardButton("🖼 Баннеры", callback_data="adm:banners"))
     kb.add(types.InlineKeyboardButton("📦 Заказы", callback_data="adm:orders"))
     kb.add(types.InlineKeyboardButton("🏷 Промокоды", callback_data="adm:promos"))
-    kb.add(types.InlineKeyboardButton("✉️ Инвайт на отзыв", callback_data="adm:review_invite"))
+    kb.add(types.InlineKeyboardButton("✉️ Инвайт на отзыв", callback_data="adm:review_invite_forward"))  # ✅ новый способ
     kb.add(types.InlineKeyboardButton("📝 Непринятые отзывы", callback_data="adm:reviews_pending"))
-
-    # ✅ КНОПКА УДАЛЕНИЯ КАТЕГОРИИ С ПОЛНОЙ ОЧИСТКОЙ
-    kb.add(types.InlineKeyboardButton("🗑 Удалить категорию", callback_data="adm:cat_del"))
-
     kb.add(types.InlineKeyboardButton("📣 Рассылка", callback_data="adm:broadcast"))
     kb.add(types.InlineKeyboardButton("📊 Статистика", callback_data="adm:stats"))
     kb.add(back_btn("sec:menu"))
+    return kb
+
+
+# ====== Админ категории ======
+def admin_categories_kb():
+    cats = get_categories()
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    if not cats:
+        kb.add(back_btn("sec:admin"))
+        return kb
+
+    for c in cats:
+        kb.add(types.InlineKeyboardButton(f"🗑 Удалить «{c['name']}»", callback_data=f"adm:catdel:{c['id']}"))
+    kb.add(back_btn("sec:admin"))
     return kb
 
 
@@ -869,13 +863,6 @@ def parse_post_to_product(caption: str) -> Tuple[str, str, str, int, bool]:
 
 
 def extract_sizes_from_text(text: str) -> List[str]:
-    """
-    Ищем строку 'Размеры:' или 'Размер:' и берём всё что после.
-    Примеры:
-      'Размеры: XS / S / M / L'
-      'Размеры: 42 43 44'
-      'Размер: one size'
-    """
     if not text:
         return ["XS", "S", "M", "L", "XL"]
 
@@ -1086,6 +1073,7 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
     kb = product_nav_kb(cat_id, idx, len(prods), p["id"])
 
     key = (user_id, cat_id)
+
     _delete_old_product_media(chat_id, key)
     _delete_old_product_ctrl(chat_id, key)
 
@@ -1608,53 +1596,7 @@ def cb_order_status(c: types.CallbackQuery):
             pass
 
 
-# ================== АДМИН: УДАЛЕНИЕ КАТЕГОРИЙ (ПОЛНОЕ) ==================
-@bot.callback_query_handler(func=lambda c: c.data == "adm:cat_del")
-def cb_adm_cat_del(c: types.CallbackQuery):
-    if c.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(c.id, "Нет доступа.")
-        return
-    bot.answer_callback_query(c.id)
-
-    cats = get_categories()
-    if not cats:
-        smart_send(
-            c.message.chat.id,
-            "Категорий нет.",
-            types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
-            origin_msg=c.message
-        )
-        return
-
-    smart_send(
-        c.message.chat.id,
-        "Выбери категорию для ПОЛНОГО удаления (удалятся все товары внутри):",
-        category_delete_kb(cats),
-        origin_msg=c.message
-    )
-
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("catdel:"))
-def cb_cat_del_confirm(c: types.CallbackQuery):
-    if c.from_user.id != ADMIN_ID:
-        bot.answer_callback_query(c.id, "Нет доступа.")
-        return
-
-    cat_id = int(c.data.split(":")[1])
-    bot.answer_callback_query(c.id)
-
-    deleted_count, _ = delete_category_full(cat_id)
-
-    bot.send_message(
-        c.message.chat.id,
-        f"✅ Категория удалена.\n"
-        f"Удалено товаров внутри: <b>{deleted_count}</b>",
-        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:admin"))
-    )
-# ========================================================================
-
-
-# ================== АДМИН: IMPORT HINT КНОПКА ==================
+# ================== АДМИН: IMPORT HINT ==================
 @bot.callback_query_handler(func=lambda c: c.data == "adm:import_hint")
 def cb_adm_import_hint(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1674,6 +1616,44 @@ def cb_adm_import_hint(c: types.CallbackQuery):
     smart_send(c.message.chat.id, txt,
                types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
                origin_msg=c.message)
+
+
+# ================== АДМИН: КАТЕГОРИИ ==================
+@bot.callback_query_handler(func=lambda c: c.data == "adm:categories")
+def cb_adm_categories(c: types.CallbackQuery):
+    if c.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(c.id, "Нет доступа.")
+        return
+    bot.answer_callback_query(c.id)
+    smart_send(
+        c.message.chat.id,
+        "🗂 <b>Категории</b>\n\nНажми чтобы удалить категорию полностью:",
+        admin_categories_kb(),
+        origin_msg=c.message
+    )
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("adm:catdel:"))
+def cb_adm_catdel(c: types.CallbackQuery):
+    if c.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(c.id, "Нет доступа.")
+        return
+    cat_id = int(c.data.split(":")[2])
+    bot.answer_callback_query(c.id)
+
+    cat = db_exec("SELECT name FROM categories WHERE id=?", (cat_id,), fetchone=True)
+    if not cat:
+        bot.answer_callback_query(c.id, "Категория не найдена.")
+        return
+
+    delete_category_full(cat_id)
+
+    smart_send(
+        c.message.chat.id,
+        f"✅ Категория «{cat['name']}» удалена вместе со всеми товарами.",
+        admin_categories_kb(),
+        origin_msg=c.message
+    )
 
 
 # ================== АДМИН: БАННЕРЫ ==================
@@ -1884,9 +1864,57 @@ def admin_do_broadcast(message: types.Message):
     )
 
 
-# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (ПО @USERNAME) ==================
+# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (НОВЫЙ: ПО ПЕРЕСЛАННОМУ) ==================
+@bot.callback_query_handler(func=lambda c: c.data == "adm:review_invite_forward")
+def cb_adm_review_invite_forward(c: types.CallbackQuery):
+    if c.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(c.id, "Нет доступа.")
+        return
+    bot.answer_callback_query(c.id)
+    msg = bot.send_message(
+        c.message.chat.id,
+        "Перешли мне любое сообщение пользователя, которому надо отправить инвайт на отзыв."
+    )
+    bot.register_next_step_handler(msg, admin_send_review_invite_forward)
+
+
+def admin_send_review_invite_forward(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if not message.forward_from:
+        bot.reply_to(message, "Это не пересланное сообщение. Перешли сообщение пользователя из любого чата.")
+        return
+
+    uid = message.forward_from.id
+    username = message.forward_from.username or "—"
+
+    db_exec(
+        "INSERT INTO review_invites(user_id,invited_at,used) VALUES(?,?,0) "
+        "ON CONFLICT(user_id) DO UPDATE SET invited_at=excluded.invited_at, used=0",
+        (uid, datetime.utcnow().isoformat()),
+    )
+
+    invite_text = (
+        "✍️ Админ приглашает тебя оставить отзыв.\n\n"
+        "Напиши одним сообщением:\n"
+        "• что понравилось/не понравилось\n"
+        "• как сидит, размер\n"
+        "• качество ткани/принта\n"
+        "• можно фото (альбом)\n\n"
+        "Как отправишь — я передам админу на модерацию ✅"
+    )
+
+    try:
+        bot.send_message(uid, invite_text)
+        bot.reply_to(message, f"✅ Инвайт отправлен пользователю @{username} (id {uid}).")
+    except Exception as e:
+        bot.reply_to(message, f"Не смог отправить инвайт: {e}")
+
+
+# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (СТАРЫЙ: ПО @USERNAME) ==================
 @bot.callback_query_handler(func=lambda c: c.data == "adm:review_invite")
-def cb_adm_review_invite(c: types.CallbackQuery):
+def cb_adm_review_invite_old(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
         bot.answer_callback_query(c.id, "Нет доступа.")
         return
@@ -1896,10 +1924,10 @@ def cb_adm_review_invite(c: types.CallbackQuery):
         "Введи @username пользователя для инвайта на отзыв.\n"
         "Пример: <code>@someuser</code>"
     )
-    bot.register_next_step_handler(msg, admin_send_review_invite)
+    bot.register_next_step_handler(msg, admin_send_review_invite_old)
 
 
-def admin_send_review_invite(message: types.Message):
+def admin_send_review_invite_old(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
 
@@ -2093,7 +2121,7 @@ def _save_user_review(user_id: int, text: str, photos: List[str], chat_id: int):
         bot.send_message(ADMIN_ID, adm_caption, reply_markup=review_pending_kb(rid))
 
 
-# ================== FLUSH АЛЬБОМОВ (ПОЧИНЕННЫЙ) ==================
+# ================== FLUSH АЛЬБОМОВ ==================
 @bot.message_handler(content_types=["text", "photo", "video", "document", "audio", "voice", "sticker"])
 def media_group_flush(message: types.Message):
     if message.from_user and message.from_user.id == ADMIN_ID:
