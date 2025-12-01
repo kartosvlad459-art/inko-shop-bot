@@ -1865,7 +1865,7 @@ def admin_do_broadcast(message: types.Message):
     )
 
 
-# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (ПО @USERNAME) ==================
+# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (ПО ПЕРЕСЛАННОМУ СООБЩЕНИЮ) ==================
 @bot.callback_query_handler(func=lambda c: c.data == "adm:review_invite")
 def cb_adm_review_invite(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1874,32 +1874,28 @@ def cb_adm_review_invite(c: types.CallbackQuery):
     bot.answer_callback_query(c.id)
     msg = bot.send_message(
         c.message.chat.id,
-        "Введи @username пользователя для инвайта на отзыв.\n"
-        "Пример: <code>@someuser</code>"
+        "Перешли сюда любое сообщение пользователя, которому хочешь отправить инвайт на отзыв.\n\n"
+        "Важно: именно <b>пересланное</b> сообщение (forward), не скрин и не копипаст."
     )
-    bot.register_next_step_handler(msg, admin_send_review_invite)
+    bot.register_next_step_handler(msg, admin_send_review_invite_from_forward)
 
 
-def admin_send_review_invite(message: types.Message):
+def admin_send_review_invite_from_forward(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    raw = (message.text or "").strip()
-    if not raw:
-        bot.reply_to(message, "Пусто. Введи @username.")
+    # Берём юзера из форварда
+    fwd = getattr(message, "forward_from", None)
+    if not fwd:
+        bot.reply_to(
+            message,
+            "Не вижу, от кого переслано сообщение.\n"
+            "Перешли именно <b>форвардом</b> сообщение пользователя."
+        )
         return
 
-    username = raw[1:] if raw.startswith("@") else raw
-
-    if username.isdigit():
-        uid = int(username)
-    else:
-        try:
-            chat = bot.get_chat(username)
-            uid = chat.id
-        except Exception as e:
-            bot.reply_to(message, f"Не нашёл пользователя @{username}. Ошибка: {e}")
-            return
+    uid = fwd.id
+    username = fwd.username or ""
 
     db_exec(
         "INSERT INTO review_invites(user_id,invited_at,used) VALUES(?,?,0) "
@@ -1920,10 +1916,14 @@ def admin_send_review_invite(message: types.Message):
 
     try:
         bot.send_message(uid, invite_text)
-        bot.reply_to(message, f"✅ Инвайт отправлен пользователю @{username} (id {uid}).")
+        bot.reply_to(
+            message,
+            f"✅ Инвайт отправлен пользователю "
+            f"{'@'+username if username else ''} (id {uid})."
+        )
     except Exception as e:
         bot.reply_to(message, f"Не смог отправить инвайт: {e}")
-
+        
 
 # ================== АДМИН: НЕПРИНЯТЫЕ ОТЗЫВЫ ==================
 @bot.callback_query_handler(func=lambda c: c.data == "adm:reviews_pending")
