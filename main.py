@@ -337,6 +337,30 @@ def get_product(product_id: int) -> Optional[sqlite3.Row]:
     return db_exec("SELECT * FROM products WHERE id=?", (product_id,), fetchone=True)
 
 
+# ✅ ПОЛНОЕ УДАЛЕНИЕ КАТЕГОРИИ (С ОЧИСТКОЙ СОДЕРЖИМОГО)
+def delete_category_full(cat_id: int) -> Tuple[int, int]:
+    """
+    Полное удаление категории:
+    - удаляет все товары в категории
+    - чистит cart_items, favorites, order_items по этим товарам
+    - удаляет саму категорию
+    Возвращает: (сколько товаров удалено, cat_id)
+    """
+    prods = db_exec("SELECT id FROM products WHERE category_id=?", (cat_id,), fetchall=True)
+    prod_ids = [p["id"] for p in prods]
+
+    if prod_ids:
+        q_marks = ",".join(["?"] * len(prod_ids))
+
+        db_exec(f"DELETE FROM cart_items WHERE product_id IN ({q_marks})", tuple(prod_ids))
+        db_exec(f"DELETE FROM favorites WHERE product_id IN ({q_marks})", tuple(prod_ids))
+        db_exec(f"DELETE FROM order_items WHERE product_id IN ({q_marks})", tuple(prod_ids))
+        db_exec(f"DELETE FROM products WHERE id IN ({q_marks})", tuple(prod_ids))
+
+    db_exec("DELETE FROM categories WHERE id=?", (cat_id,))
+    return len(prod_ids), cat_id
+
+
 # ================== КОРЗИНА / ЗАКАЗЫ ==================
 def add_to_cart(user_id: int, product_id: int, size: str, qty: int = 1):
     db_exec(
@@ -617,6 +641,15 @@ def category_kb(cats):
     return kb
 
 
+# ✅ клавиатура выбора категории для удаления
+def category_delete_kb(cats):
+    kb = types.InlineKeyboardMarkup()
+    for c in cats:
+        kb.add(types.InlineKeyboardButton(f"🗑 {c['name']}", callback_data=f"catdel:{c['id']}"))
+    kb.add(back_btn("sec:admin"))
+    return kb
+
+
 def product_nav_kb(cat_id: int, idx: int, total: int, prod_id: int):
     kb = types.InlineKeyboardMarkup(row_width=2)
     prev_data = f"pnav:{cat_id}:{idx-1}" if idx > 0 else "noop"
@@ -704,6 +737,10 @@ def admin_panel_kb():
     kb.add(types.InlineKeyboardButton("🏷 Промокоды", callback_data="adm:promos"))
     kb.add(types.InlineKeyboardButton("✉️ Инвайт на отзыв", callback_data="adm:review_invite"))
     kb.add(types.InlineKeyboardButton("📝 Непринятые отзывы", callback_data="adm:reviews_pending"))
+
+    # ✅ КНОПКА УДАЛЕНИЯ КАТЕГОРИИ С ПОЛНОЙ ОЧИСТКОЙ
+    kb.add(types.InlineKeyboardButton("🗑 Удалить категорию", callback_data="adm:cat_del"))
+
     kb.add(types.InlineKeyboardButton("📣 Рассылка", callback_data="adm:broadcast"))
     kb.add(types.InlineKeyboardButton("📊 Статистика", callback_data="adm:stats"))
     kb.add(back_btn("sec:menu"))
@@ -847,7 +884,6 @@ def extract_sizes_from_text(text: str) -> List[str]:
         return ["XS", "S", "M", "L", "XL"]
 
     raw = m.group(1).strip()
-    # делим по /, , или пробелам
     parts = re.split(r"[\/,]|(?:\s{1,})", raw)
     sizes = [p.strip() for p in parts if p.strip()]
     return sizes or ["XS", "S", "M", "L", "XL"]
@@ -866,7 +902,6 @@ def cmd_start(message: types.Message):
 
     add_user(message.from_user.id, message.from_user.username, referrer_id)
 
-    # ✅ ОБЯЗАТЕЛЬНАЯ САБКА СРАЗУ ПОСЛЕ /start
     if not is_subscribed(message.from_user.id):
         send_subscribe_gate(message.chat.id)
         return
@@ -1001,8 +1036,6 @@ def open_catalog(chat_id: int):
 
 USER_CAT_INDEX: Dict[Tuple[int, int], int] = {}
 USER_PRODUCT_CTRL_MSG: Dict[Tuple[int, int], int] = {}
-
-# ✅ храним id медиа-сообщений по (user_id, cat_id)
 USER_PRODUCT_MEDIA_MSGS: Dict[Tuple[int, int], List[int]] = {}
 
 
@@ -1018,7 +1051,6 @@ def _delete_old_product_media(chat_id: int, key: Tuple[int, int]):
     USER_PRODUCT_MEDIA_MSGS[key] = []
 
 
-# ✅ НОВОЕ: удаляем старую "табличку" с кнопками, чтобы новая была снизу
 def _delete_old_product_ctrl(chat_id: int, key: Tuple[int, int]):
     ctrl_mid = USER_PRODUCT_CTRL_MSG.get(key)
     if not ctrl_mid:
@@ -1054,14 +1086,11 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
     kb = product_nav_kb(cat_id, idx, len(prods), p["id"])
 
     key = (user_id, cat_id)
-
-    # ✅ чистим прошлые медиа и прошлую "табличку" с кнопками
     _delete_old_product_media(chat_id, key)
     _delete_old_product_ctrl(chat_id, key)
 
     new_media_mids: List[int] = []
 
-    # 1) Отправляем новые медиа
     if len(photos) >= 2:
         media = [InputMediaPhoto(pid) for pid in photos[:10]]
         media[-1].caption = text
@@ -1078,7 +1107,6 @@ def show_product(chat_id: int, user_id: int, cat_id: int, idx: int):
 
     USER_PRODUCT_MEDIA_MSGS[key] = new_media_mids
 
-    # 2) СРАЗУ после товара шлём НОВОЕ сообщение с кнопками — оно будет снизу
     ctrl = bot.send_message(chat_id, "Выбери действие:", reply_markup=kb)
     USER_PRODUCT_CTRL_MSG[key] = ctrl.message_id
 
@@ -1578,6 +1606,52 @@ def cb_order_status(c: types.CallbackQuery):
             bot.send_message(o["user_id"], f"🔔 Статус заказа #{order_id}: <b>{status}</b>")
         except:
             pass
+
+
+# ================== АДМИН: УДАЛЕНИЕ КАТЕГОРИЙ (ПОЛНОЕ) ==================
+@bot.callback_query_handler(func=lambda c: c.data == "adm:cat_del")
+def cb_adm_cat_del(c: types.CallbackQuery):
+    if c.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(c.id, "Нет доступа.")
+        return
+    bot.answer_callback_query(c.id)
+
+    cats = get_categories()
+    if not cats:
+        smart_send(
+            c.message.chat.id,
+            "Категорий нет.",
+            types.InlineKeyboardMarkup().add(back_btn("sec:admin")),
+            origin_msg=c.message
+        )
+        return
+
+    smart_send(
+        c.message.chat.id,
+        "Выбери категорию для ПОЛНОГО удаления (удалятся все товары внутри):",
+        category_delete_kb(cats),
+        origin_msg=c.message
+    )
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("catdel:"))
+def cb_cat_del_confirm(c: types.CallbackQuery):
+    if c.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(c.id, "Нет доступа.")
+        return
+
+    cat_id = int(c.data.split(":")[1])
+    bot.answer_callback_query(c.id)
+
+    deleted_count, _ = delete_category_full(cat_id)
+
+    bot.send_message(
+        c.message.chat.id,
+        f"✅ Категория удалена.\n"
+        f"Удалено товаров внутри: <b>{deleted_count}</b>",
+        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:admin"))
+    )
+# ========================================================================
 
 
 # ================== АДМИН: IMPORT HINT КНОПКА ==================
