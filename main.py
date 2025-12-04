@@ -5,11 +5,11 @@ import json
 import re
 import time
 from datetime import datetime
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 
 import telebot
 from telebot import types
-from telebot.types import InputMediaPhoto
+from telebot.types import InputMediaPhoto, WebAppInfo
 
 # ================== АВТО-СБРОС БАЗЫ ==================
 RESET_DB = False  # для продакшена False. если нужен чистый старт — поставь True
@@ -37,13 +37,16 @@ if not TOKEN:
     raise RuntimeError("INKO_BOT_TOKEN is not set")
 
 ADMIN_ID = 7867809053
-CHANNEL_USERNAME = "@Inkoshop"  # ✅ лучше с @
+CHANNEL_USERNAME = "@Inkoshop"
 CURRENCY = "₽"
 
 REFERRAL_BONUS = 0
 REFERRAL_CAP = 40
 
 PROMO_MAX_PERCENT = 25  # лимит скидки с промокода
+
+# WebApp витрина
+WEBAPP_CATALOG_URL = os.getenv("WEBAPP_CATALOG_URL", "").strip()  # обязательно задай на рендере
 # ==============================================
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
@@ -93,6 +96,7 @@ def init_db():
         price           INTEGER,
         is_preorder     INTEGER DEFAULT 0,
         photos_json     TEXT,
+        tags_json       TEXT,
         created_at      TEXT,
         FOREIGN KEY(category_id) REFERENCES categories(id)
     )
@@ -126,7 +130,9 @@ def init_db():
         discount_percent INTEGER DEFAULT 0,
         final_total      INTEGER,
         promo_code       TEXT,
-        created_at       TEXT
+        created_at       TEXT,
+        partner_commission INTEGER DEFAULT 0,
+        partner_paid INTEGER DEFAULT 0
     )
     """)
 
@@ -216,18 +222,26 @@ def init_db():
 
 
 def ensure_columns():
-    cols = {r["name"] for r in db_exec("PRAGMA table_info(orders)", fetchall=True)}
-    if "partner_commission" not in cols:
+    # orders
+    cols_orders = {r["name"] for r in db_exec("PRAGMA table_info(orders)", fetchall=True)}
+    if "partner_commission" not in cols_orders:
         try:
             db_exec("ALTER TABLE orders ADD COLUMN partner_commission INTEGER DEFAULT 0", commit=True)
         except Exception as e:
             print("ALTER orders partner_commission fail:", e)
-
-    if "partner_paid" not in cols:
+    if "partner_paid" not in cols_orders:
         try:
             db_exec("ALTER TABLE orders ADD COLUMN partner_paid INTEGER DEFAULT 0", commit=True)
         except Exception as e:
             print("ALTER orders partner_paid fail:", e)
+
+    # products tags_json
+    cols_products = {r["name"] for r in db_exec("PRAGMA table_info(products)", fetchall=True)}
+    if "tags_json" not in cols_products:
+        try:
+            db_exec("ALTER TABLE products ADD COLUMN tags_json TEXT", commit=True)
+        except Exception as e:
+            print("ALTER products tags_json fail:", e)
 
 
 def get_setting(key: str) -> Optional[str]:
@@ -305,16 +319,18 @@ def create_product(
     price: int,
     photo_ids: List[str],
     is_preorder: bool = False,
+    tags: Optional[List[str]] = None,
 ) -> int:
     cat_id = get_or_create_category(category_name)
+    tags_json = json.dumps(tags or [], ensure_ascii=False)
     db_exec(
         """
-        INSERT INTO products(category_id,title,description,price,is_preorder,photos_json,created_at)
-        VALUES (?,?,?,?,?,?,?)
+        INSERT INTO products(category_id,title,description,price,is_preorder,photos_json,tags_json,created_at)
+        VALUES (?,?,?,?,?,?,?,?)
         """,
         (
             cat_id, title, description, price, int(is_preorder),
-            json.dumps(photo_ids), datetime.utcnow().isoformat()
+            json.dumps(photo_ids), tags_json, datetime.utcnow().isoformat()
         ),
     )
     row = db_exec("SELECT id FROM products ORDER BY id DESC LIMIT 1", fetchone=True)
@@ -606,10 +622,16 @@ def back_btn(data="sec:menu"):
 
 def main_menu(user_id: int):
     kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton("🛍 Каталог", callback_data="sec:catalog"),
-        types.InlineKeyboardButton("🧠 Поиск", callback_data="sec:search"),
-    )
+
+    # ВИТРИНА (WebApp)
+    if WEBAPP_CATALOG_URL:
+        kb.add(types.InlineKeyboardButton(
+            "🛍 Каталог (витрина)",
+            web_app=WebAppInfo(url=WEBAPP_CATALOG_URL)
+        ))
+    else:
+        kb.add(types.InlineKeyboardButton("🛍 Каталог", callback_data="sec:catalog"))
+
     kb.add(
         types.InlineKeyboardButton("🧺 Корзина", callback_data="sec:cart"),
         types.InlineKeyboardButton("⭐️ Избранное", callback_data="sec:favs"),
@@ -628,7 +650,6 @@ def main_menu(user_id: int):
 
 
 def category_kb(cats):
-    """Категории 2 колонки."""
     kb = types.InlineKeyboardMarkup(row_width=2)
     buttons = [types.InlineKeyboardButton(f"• {c['name']}", callback_data=f"cat:{c['id']}") for c in cats]
     for i in range(0, len(buttons), 2):
@@ -833,7 +854,8 @@ def send_section_banner(chat_id: int, section: str, text: str, kb=None, origin_m
         smart_send(chat_id, text, kb, origin_msg=origin_msg)
 
 
-def parse_post_to_product(caption: str) -> Tuple[str, str, str, int, bool]:
+# ================== ИМПОРТ ИЗ ПОСТА (категория по хештегу + теги) ==================
+def parse_post_to_product(caption: str) -> Tuple[str, str, str, int, bool, List[str]]:
     lines = [l.strip() for l in caption.splitlines() if l.strip()]
     title = lines[0] if lines else "Без названия"
     description = "\n".join(lines[1:]) if len(lines) > 1 else ""
@@ -843,15 +865,19 @@ def parse_post_to_product(caption: str) -> Tuple[str, str, str, int, bool]:
     if m:
         price = int(m.group(1))
 
-    cat = "Разное"
     hashtags = re.findall(r"#([\wА-Яа-я0-9_]+)", caption)
+    clean_tags: List[str] = []
+    category = "Разное"
+
     for h in hashtags:
-        if h.lower() != "предзаказ":
-            cat = h
-            break
+        if h.lower() == "предзаказ":
+            continue
+        clean_tags.append(h)
+        if category == "Разное":
+            category = h
 
     is_pre = any(h.lower() == "предзаказ" for h in hashtags)
-    return cat, title, description, price, is_pre
+    return category, title, description, price, is_pre, clean_tags
 
 
 def extract_sizes_from_text(text: str) -> List[str]:
@@ -887,7 +913,8 @@ def cmd_start(message: types.Message):
 
     caption = (
         "<b>Привет! Ты в официальном боте магазина Inko Shop 👋</b>\n"
-        "<b>Нажми кнопку ниже, чтобы начать:</b>"
+        "<b>Каталог и поиск — в витрине.</b>\n"
+        "<b>Корзина, избранное и заказы — тут.</b>"
     )
 
     logo_id = get_setting("logo_file_id")
@@ -952,37 +979,34 @@ def _finalize_admin_import(chat_id: int, caption: str, photos: List[str]):
         bot.send_message(chat_id, "Нужен пост с подписью (описанием).")
         return
 
-    cat, title, description, price, is_pre = parse_post_to_product(caption)
+    cat, title, description, price, is_pre, tags = parse_post_to_product(caption)
 
     if price <= 0:
         bot.send_message(chat_id, "❗️ Не нашёл цену. Укажи число перед ₽ или р.")
         return
 
-    product_id = create_product(cat, title, description, price, photos, is_pre)
+    product_id = create_product(cat, title, description, price, photos, is_pre, tags)
+
+    tags_line = ", ".join([f"#{t}" for t in tags]) if tags else "—"
+    pre_line = "да" if is_pre else "нет"
+
+    preview_text = (
+        f"✅ Импортировано:\n"
+        f"<b>{title}</b>\n"
+        f"Категория: <b>{cat}</b>\n"
+        f"Теги: {tags_line}\n"
+        f"Предзаказ: {pre_line}\n"
+        f"Цена: <b>{price}{CURRENCY}</b>\n"
+        f"ID: <code>{product_id}</code>"
+    )
 
     if len(photos) >= 2:
         media = [InputMediaPhoto(pid) for pid in photos[:10]]
-        media[-1].caption = (
-            f"✅ Импортировано (превью):\n"
-            f"<b>{title}</b>\n"
-            f"Категория: <b>{cat}</b>\n"
-            f"Цена: <b>{price}{CURRENCY}</b>\n"
-            f"ID: <code>{product_id}</code>"
-        )
+        media[-1].caption = preview_text
         media[-1].parse_mode = "HTML"
         bot.send_media_group(chat_id, media)
     else:
-        bot.send_photo(
-            chat_id,
-            photos[-1],
-            caption=(
-                f"✅ Импортировано:\n"
-                f"<b>{title}</b>\n"
-                f"Категория: <b>{cat}</b>\n"
-                f"Цена: <b>{price}{CURRENCY}</b>\n"
-                f"ID: <code>{product_id}</code>"
-            )
-        )
+        bot.send_photo(chat_id, photos[-1], caption=preview_text, parse_mode="HTML")
 
 
 @bot.message_handler(func=lambda m: m.from_user and m.from_user.id == ADMIN_ID, content_types=["photo"])
@@ -1003,7 +1027,7 @@ def admin_import_product(message: types.Message):
     _finalize_admin_import(message.chat.id, caption, photos)
 
 
-# ================== РАЗДЕЛЫ ==================
+# ================== РАЗДЕЛЫ (РЕЗЕРВ, если WEBAPP не задан) ==================
 def open_catalog(chat_id: int):
     cats = get_categories()
     if not cats:
@@ -1171,11 +1195,9 @@ def open_promo_section(chat_id: int, user_id: int, origin_msg: types.Message = N
 def open_help(chat_id: int, origin_msg: types.Message = None):
     text = (
         "<b>Как пользоваться:</b>\n\n"
-        "1) Открой Каталог → выбери категорию.\n"
-        "2) Листай товары стрелками.\n"
-        "3) Нажми «Выбрать размер / в корзину».\n"
-        "4) В Корзине нажми «Оформить” заказ».\n"
-        "5) Дальше админ свяжется с тобой.\n"
+        "1) Открой «Каталог (витрина)» в меню.\n"
+        "2) В витрине выбирай товары и добавляй в корзину/избранное.\n"
+        "3) Для оплаты и статусов — зайди в «Корзина» или «Профиль» тут.\n"
         "Промокод можно ввести заранее в меню «Промокод».\n"
     )
     send_section_banner(chat_id, "help", text,
@@ -1223,6 +1245,7 @@ def cb_section(c: types.CallbackQuery):
         smart_send(c.message.chat.id, "Меню:", main_menu(uid), origin_msg=c.message)
 
     elif sec == "catalog":
+        # Резервный каталог (если WEBAPP нет)
         open_catalog(c.message.chat.id)
 
     elif sec == "reviews":
@@ -1247,8 +1270,7 @@ def cb_section(c: types.CallbackQuery):
         open_admin_panel(c.message.chat.id, uid, origin_msg=c.message)
 
     elif sec == "search":
-        msg = bot.send_message(c.message.chat.id, "Напиши часть названия товара:")
-        bot.register_next_step_handler(msg, search_products)
+        smart_send(c.message.chat.id, "Поиск теперь в витрине 😉", origin_msg=c.message)
 
 
 @bot.callback_query_handler(func=lambda c: c.data == "promo:clear")
@@ -1319,29 +1341,6 @@ def cb_cart_del(c: types.CallbackQuery):
     open_cart(c.message.chat.id, c.from_user.id, origin_msg=c.message)
 
 
-def search_products(message: types.Message):
-    text = (message.text or "").strip()
-    if not text:
-        bot.reply_to(message, "Пустой запрос.")
-        return
-    rows = db_exec("SELECT * FROM products WHERE title LIKE ? ORDER BY id DESC",
-                   (f"%{text}%",), fetchall=True)
-    if not rows:
-        bot.reply_to(message, "Ничего не найдено.")
-        return
-    bot.reply_to(message, f"Найдено: {len(rows)}. Показываю первые:")
-    for p in rows[:5]:
-        photos = json.loads(p["photos_json"]) if p["photos_json"] else []
-        caption = f"<b>{p['title']}</b>\nЦена: <b>{p['price']}{CURRENCY}</b>"
-        kb = types.InlineKeyboardMarkup()
-        kb.add(types.InlineKeyboardButton("Выбрать размер / в корзину", callback_data=f"prod:{p['id']}"))
-        kb.add(back_btn("sec:menu"))
-        if photos:
-            bot.send_photo(message.chat.id, photos[-1], caption=caption, reply_markup=kb)
-        else:
-            bot.send_message(message.chat.id, caption, reply_markup=kb)
-
-
 @bot.callback_query_handler(func=lambda c: c.data.startswith("prod:"))
 def cb_product(c: types.CallbackQuery):
     prod_id = int(c.data.split(":", 1)[1])
@@ -1369,7 +1368,7 @@ def cb_choose_size(c: types.CallbackQuery):
     bot.send_message(
         c.message.chat.id,
         f"✅ {p['title']} ({size}) добавлен в корзину.",
-        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:catalog"))
+        reply_markup=types.InlineKeyboardMarkup().add(back_btn("sec:menu"))
     )
 
 
@@ -1471,6 +1470,93 @@ def _process_checkout_by_code(chat_id: int, user_id: int):
 
     bot.send_message(ADMIN_ID, adm_text,
                      reply_markup=admin_order_actions_kb(order_id, user_id))
+
+
+# ================== ПРИЁМ ДЕЙСТВИЙ ИЗ ВИТРИНЫ (WebApp) ==================
+@bot.message_handler(content_types=["web_app_data"])
+def handle_webapp_data(message: types.Message):
+    """
+    Ожидаем JSON из витрины.
+    Примеры:
+      {"action":"add_to_cart","product_id":12,"size":"M","qty":1}
+      {"action":"toggle_fav","product_id":12}
+      {"action":"create_order","items":[{"product_id":12,"size":"M","qty":1}]}
+    """
+    try:
+        data_str = message.web_app_data.data
+        payload = json.loads(data_str)
+    except Exception as e:
+        bot.reply_to(message, f"Не понял данные из витрины: {e}")
+        return
+
+    action = (payload.get("action") or "").strip()
+
+    uid = message.from_user.id
+    chat_id = message.chat.id
+
+    if action == "add_to_cart":
+        try:
+            product_id = int(payload.get("product_id"))
+            size = str(payload.get("size") or "").strip()
+            qty = int(payload.get("qty") or 1)
+        except:
+            bot.send_message(chat_id, "❌ Неверные данные товара.")
+            return
+
+        p = get_product(product_id)
+        if not p:
+            bot.send_message(chat_id, "❌ Товар не найден.")
+            return
+
+        if not size:
+            # если витрина не передала размер — возьмём первый из описания
+            sizes = extract_sizes_from_text(p["description"] or "")
+            size = sizes[0] if sizes else "M"
+
+        qty = max(1, qty)
+        add_to_cart(uid, product_id, size, qty)
+        bot.send_message(chat_id, f"✅ {p['title']} ({size}) x{qty} добавлен в корзину.",
+                         reply_markup=types.InlineKeyboardMarkup().add(
+                             types.InlineKeyboardButton("Открыть корзину", callback_data="sec:cart")
+                         ))
+
+    elif action == "toggle_fav":
+        try:
+            product_id = int(payload.get("product_id"))
+        except:
+            bot.send_message(chat_id, "❌ Неверные данные товара.")
+            return
+
+        p = get_product(product_id)
+        if not p:
+            bot.send_message(chat_id, "❌ Товар не найден.")
+            return
+
+        added = toggle_favorite(uid, product_id)
+        bot.send_message(chat_id, "⭐️ Добавлено в избранное" if added else "⭐️ Удалено из избранного")
+
+    elif action == "create_order":
+        # опционально: быстрый заказ из витрины
+        items = payload.get("items") or []
+        if not isinstance(items, list) or not items:
+            bot.send_message(chat_id, "Корзина из витрины пустая.")
+            return
+
+        # добавим в корзину как есть и запустим стандартный чекаут
+        for it in items:
+            try:
+                pid = int(it.get("product_id"))
+                size = str(it.get("size") or "").strip() or "M"
+                qty = int(it.get("qty") or 1)
+            except:
+                continue
+            if get_product(pid):
+                add_to_cart(uid, pid, size, max(1, qty))
+
+        _process_checkout_by_code(chat_id, uid)
+
+    else:
+        bot.send_message(chat_id, "Действие из витрины не распознано.")
 
 
 # ================== АДМИН: ПОДТВЕРДИТЬ/ОТКЛОНИТЬ ==================
@@ -1643,10 +1729,11 @@ def cb_adm_import_hint(c: types.CallbackQuery):
     bot.answer_callback_query(c.id)
     txt = (
         "📥 <b>Импорт товара</b>\n\n"
-        "Перешли в бота пост из канала.\n"
-        "Пост может быть альбомом с несколькими фото.\n"
+        "Перешли пост из канала.\n"
+        "Пост может быть альбомом.\n"
         "Цена — числом перед ₽ или р.\n"
-        "Категория — первым #хэштегом.\n"
+        "Категория — первый #хэштег кроме #предзаказ.\n"
+        "Остальные хэшеги сохранятся как теги.\n"
         "Если есть #предзаказ — отметится как предзаказ.\n\n"
         "Если переслал альбом — после него отправь любое сообщение, "
         "чтобы бот завершил импорт."
@@ -1666,7 +1753,6 @@ def cb_adm_banners(c: types.CallbackQuery):
     kb = types.InlineKeyboardMarkup()
     for sec, name in [
         ("catalog", "Каталог"),
-        ("search", "Поиск"),
         ("cart", "Корзина"),
         ("favs", "Избранное"),
         ("profile", "Профиль"),
@@ -1865,7 +1951,7 @@ def admin_do_broadcast(message: types.Message):
     )
 
 
-# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ (ПО ПЕРЕСЛАННОМУ СООБЩЕНИЮ) ==================
+# ================== АДМИН: ИНВАЙТ НА ОТЗЫВ ==================
 @bot.callback_query_handler(func=lambda c: c.data == "adm:review_invite")
 def cb_adm_review_invite(c: types.CallbackQuery):
     if c.from_user.id != ADMIN_ID:
@@ -1884,7 +1970,6 @@ def admin_send_review_invite_from_forward(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
 
-    # Берём юзера из форварда
     fwd = getattr(message, "forward_from", None)
     if not fwd:
         bot.reply_to(
@@ -1923,7 +2008,7 @@ def admin_send_review_invite_from_forward(message: types.Message):
         )
     except Exception as e:
         bot.reply_to(message, f"Не смог отправить инвайт: {e}")
-        
+
 
 # ================== АДМИН: НЕПРИНЯТЫЕ ОТЗЫВЫ ==================
 @bot.callback_query_handler(func=lambda c: c.data == "adm:reviews_pending")
