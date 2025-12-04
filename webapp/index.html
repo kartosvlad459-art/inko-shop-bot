@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inko Shop — витрина</title>
+
+  <link rel="stylesheet" href="./style.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">🛍</div>
+        <div class="title">
+          <h1>Inko Shop</h1>
+          <p id="subtitle">Витрина</p>
+        </div>
+      </div>
+
+      <div class="searchbox">
+        <input id="searchInput" type="search" placeholder="Я ищу..." />
+        <button id="clearSearch" title="Очистить">✕</button>
+      </div>
+    </header>
+
+    <nav class="chips" id="categoryChips">
+      <!-- категории -->
+    </nav>
+
+    <main id="grid" class="grid">
+      <!-- карточки товаров -->
+    </main>
+
+    <div id="empty" class="empty hidden">
+      Ничего не найдено 😔
+    </div>
+
+    <footer class="footer">
+      <button id="openBot" class="ghost">Открыть бота</button>
+      <button id="openCart" class="primary">Корзина</button>
+    </footer>
+
+  </div>
+
+  <script src="./app.js"></script>
+</body>
