@@ -2,7 +2,7 @@ services:
   # --- BOT ---
   - type: web
     name: inko-shop-bot
-    env: python
+    runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
@@ -17,9 +17,8 @@ services:
         value: https://YOUR-WEBAPP.onrender.com
 
   # --- WEBAPP (STATIC SITE) ---
-  - type: static_site
+  - type: web
     name: inko-webapp
-    env: static
-    plan: free
+    runtime: static
     staticPublishPath: docs
     autoDeploy: true
