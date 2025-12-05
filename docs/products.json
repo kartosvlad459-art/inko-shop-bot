@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1,
+    "title": "Кроссовки INKO Runner",
+    "price": 5490,
+    "category": "кроссовки",
+    "description": "Лёгкие, дышащие. Унисекс.\nРазмеры: 36 / 37 / 38 / 39 / 40 / 41 / 42",
+    "photos": [
+      "https://placehold.co/800x1000/png?text=INKO+Runner"
+    ],
+    "is_preorder": false
+  },
+  {
+    "id": 2,
+    "title": "Худи INKO Black",
+    "price": 3990,
+    "category": "худи",
+    "description": "Оверсайз посадка, плотный хлопок.\nРазмеры: S / M / L / XL",
+    "photos": [
+      "https://placehold.co/800x1000/png?text=INKO+Hoodie"
+    ],
+    "is_preorder": false
+  },
+  {
+    "id": 3,
+    "title": "Футболка INKO White",
+    "price": 1990,
+    "category": "футболки",
+    "description": "Белая футболка с принтом.\nРазмеры: XS / S / M / L / XL",
+    "photos": [
+      "https://placehold.co/800x1000/png?text=INKO+Tee"
+    ],
+    "is_preorder": false
+  },
+  {
+    "id": 4,
+    "title": "Куртка INKO Winter",
+    "price": 8990,
+    "category": "куртки",
+    "description": "Тёплая зимняя куртка.\nРазмеры: M / L / XL",
+    "photos": [
+      "https://placehold.co/800x1000/png?text=INKO+Jacket"
+    ],
+    "is_preorder": true
+  }
+]
