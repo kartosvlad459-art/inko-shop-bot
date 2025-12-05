@@ -10,40 +10,82 @@
 </head>
 <body>
   <div class="app">
-
     <header class="topbar">
       <div class="brand">
-        <div class="logo">🛍</div>
+        <div class="logo">🛍️</div>
         <div class="title">
-          <h1>Inko Shop</h1>
-          <p id="subtitle">Витрина</p>
+          <div class="name">Inko Shop</div>
+          <div class="subtitle">Витрина товаров</div>
         </div>
       </div>
 
-      <div class="searchbox">
-        <input id="searchInput" type="search" placeholder="Я ищу..." />
-        <button id="clearSearch" title="Очистить">✕</button>
+      <div class="actions">
+        <button id="openCart" class="icon-btn" title="Корзина">
+          🧺 <span id="cartCount" class="badge hidden">0</span>
+        </button>
+        <button id="openFav" class="icon-btn" title="Избранное">
+          ❤️ <span id="favCount" class="badge hidden">0</span>
+        </button>
       </div>
     </header>
 
-    <nav class="chips" id="categoryChips">
-      <!-- категории -->
-    </nav>
+    <section class="controls">
+      <div class="search">
+        <input id="searchInput" type="search" placeholder="Поиск по товарам…" />
+      </div>
 
-    <main id="grid" class="grid">
-      <!-- карточки товаров -->
+      <div id="catChips" class="chips">
+        <!-- категории подхватятся из products.json -->
+      </div>
+    </section>
+
+    <main>
+      <div id="productsGrid" class="grid">
+        <!-- карточки товаров рисует app.js -->
+      </div>
+
+      <div id="emptyState" class="empty hidden">
+        <div class="empty-title">Ничего не найдено</div>
+        <div class="empty-sub">Попробуй другую категорию или поиск</div>
+      </div>
     </main>
 
-    <div id="empty" class="empty hidden">
-      Ничего не найдено 😔
-    </div>
-
     <footer class="footer">
-      <button id="openBot" class="ghost">Открыть бота</button>
-      <button id="openCart" class="primary">Корзина</button>
+      <button id="showAllBtn" class="ghost-btn">Показать всё</button>
+      <div class="footer-note">
+        Заказы, корзина и избранное — в боте
+      </div>
     </footer>
+  </div>
 
+  <!-- модалки -->
+  <div id="modalBackdrop" class="modal-backdrop hidden"></div>
+
+  <div id="cartModal" class="modal hidden">
+    <div class="modal-header">
+      <div class="modal-title">Корзина</div>
+      <button class="icon-btn" data-close="cartModal">✖</button>
+    </div>
+    <div id="cartList" class="modal-body"></div>
+    <div class="modal-footer">
+      <div class="sum">
+        Итого: <span id="cartSum">0</span> ₽
+      </div>
+      <button id="cartOrderBtn" class="primary-btn">Оформить в боте</button>
+    </div>
+  </div>
+
+  <div id="favModal" class="modal hidden">
+    <div class="modal-header">
+      <div class="modal-title">Избранное</div>
+      <button class="icon-btn" data-close="favModal">✖</button>
+    </div>
+    <div id="favList" class="modal-body"></div>
+    <div class="modal-footer">
+      <button id="favToBotBtn" class="primary-btn">Открыть избранное в боте</button>
+    </div>
   </div>
 
   <script src="./app.js"></script>
 </body>
+</html>
