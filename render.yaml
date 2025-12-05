@@ -1,13 +1,25 @@
 services:
+  # --- BOT ---
   - type: web
     name: inko-shop-bot
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
+    autoDeploy: true
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_ID
         sync: false
       - key: SHOP_URL
-        value: https://kartosvlad459-art.github.io/inko-shop-bot/
+        # пока заглушка — потом заменишь на реальный Render-URL сайта
+        value: https://YOUR-WEBAPP.onrender.com
+
+  # --- WEBAPP (STATIC SITE) ---
+  - type: static_site
+    name: inko-webapp
+    env: static
+    plan: free
+    staticPublishPath: docs
+    autoDeploy: true
