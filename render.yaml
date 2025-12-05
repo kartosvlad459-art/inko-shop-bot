@@ -8,13 +8,19 @@ services:
     startCommand: python main.py
     autoDeploy: true
     envVars:
+      # фикс версии Python, чтобы не падало на 3.13
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+      # секреты/переменные бота
       - key: BOT_TOKEN
         sync: false
       - key: ADMIN_ID
         sync: false
+
+      # ссылка на Render-сайт
       - key: SHOP_URL
-        # пока заглушка — потом заменишь на реальный Render-URL сайта
-        value: https://YOUR-WEBAPP.onrender.com
+        value: https://inko-webapp.onrender.com
 
   # --- WEBAPP (STATIC SITE) ---
   - type: web
