@@ -36,6 +36,12 @@ TOKEN = os.getenv("INKO_BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("INKO_BOT_TOKEN is not set")
 
+# ✅ URL WebApp каталога (берётся из Render env SHOP_URL)
+SHOP_URL = os.getenv("SHOP_URL", "").strip()
+
+# ✅ делаем WebApp основным каталогом
+USE_WEBAPP_CATALOG = True
+
 ADMIN_ID = 7867809053
 CHANNEL_USERNAME = "@Inkoshop"  # ✅ лучше с @
 CURRENCY = "₽"
@@ -606,10 +612,27 @@ def back_btn(data="sec:menu"):
 
 def main_menu(user_id: int):
     kb = types.InlineKeyboardMarkup()
-    kb.add(
-        types.InlineKeyboardButton("🛍 Каталог", callback_data="sec:catalog"),
-        types.InlineKeyboardButton("🧠 Поиск", callback_data="sec:search"),
-    )
+
+    # ✅ WebApp каталог
+    if SHOP_URL:
+        kb.add(
+            types.InlineKeyboardButton(
+                "🛍 Открыть каталог",
+                web_app=types.WebAppInfo(url=SHOP_URL)
+            )
+        )
+
+    # Старый каталог скрываем, если WebApp главный
+    if not USE_WEBAPP_CATALOG:
+        kb.add(
+            types.InlineKeyboardButton("🛍 Каталог", callback_data="sec:catalog"),
+            types.InlineKeyboardButton("🧠 Поиск", callback_data="sec:search"),
+        )
+    else:
+        kb.add(
+            types.InlineKeyboardButton("🧠 Поиск", callback_data="sec:search"),
+        )
+
     kb.add(
         types.InlineKeyboardButton("🧺 Корзина", callback_data="sec:cart"),
         types.InlineKeyboardButton("⭐️ Избранное", callback_data="sec:favs"),
@@ -1223,7 +1246,23 @@ def cb_section(c: types.CallbackQuery):
         smart_send(c.message.chat.id, "Меню:", main_menu(uid), origin_msg=c.message)
 
     elif sec == "catalog":
-        open_catalog(c.message.chat.id)
+        # ✅ если WebApp включён — открываем WebApp
+        if USE_WEBAPP_CATALOG and SHOP_URL:
+            kb = types.InlineKeyboardMarkup()
+            kb.add(
+                types.InlineKeyboardButton(
+                    "🛍 Открыть каталог",
+                    web_app=types.WebAppInfo(url=SHOP_URL)
+                )
+            )
+            smart_send(
+                c.message.chat.id,
+                "Открываю каталог 👇",
+                kb,
+                origin_msg=c.message
+            )
+        else:
+            open_catalog(c.message.chat.id)
 
     elif sec == "reviews":
         open_reviews(c.message.chat.id, uid)
